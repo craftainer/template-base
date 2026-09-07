@@ -27,7 +27,7 @@ ARG UV_VERSION=0.12.10
 # "language: python" hook (.pre-commit-config.yaml's pre-commit-hooks
 # repo), and .github/scripts/*.py need one directly.
 # renovate: datasource=python-version depName=python
-ARG PYTHON_VERSION=3.14.0
+ARG PYTHON_VERSION=3.14.7
 
 # Node.js is infrastructure tooling too, not an application runtime: npx
 # (the clear-thought MCP server in .mcp.json) is the only thing that
