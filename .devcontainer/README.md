@@ -108,6 +108,27 @@ Docker Desktop can bind-mount into a Linux container, and `code .` run
 from a Git Bash prompt doesn't change what environment the VS Code GUI
 process itself starts with anyway.
 
+## After a rebuild
+
+"Dev Containers: Rebuild Container" reruns `postCreateCommand` from
+scratch (dependency installs, `prek install`, ...) — no manual setup
+step there. Still worth doing once the container is back:
+
+- Run `prek run --all-files --hook-stage manual` — the same check-suite
+  that gates CI (`checks.yml`) — to confirm whatever motivated the
+  rebuild (a `Dockerfile`/`scripts/develop.sh` change, a new tool) works
+  end-to-end inside the container, not just that the image built.
+- If the change added, removed, or reordered a `mounts` entry, confirm
+  it actually took effect — mounts apply only at container creation, not
+  on every start (see "SSH agent forwarding" above for the concrete
+  case: a mount change needs a full rebuild, not just a restart).
+- If `forwardPorts`/`portsAttributes` changed, check the Ports panel
+  picked up the new list.
+
+A plain "Reopen in Container" (no rebuild) is enough for changes outside
+`.devcontainer/`, `Dockerfile`, and `scripts/develop.sh` — those only
+need the window reconnected, not a fresh image.
+
 ## Do
 
 - Add a new compose fragment's path to `compose.yml`'s own `include:`
