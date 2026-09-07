@@ -1,0 +1,41 @@
+{
+  "name": "template-base",
+  "dockerComposeFile": [
+    "compose.yml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4.1.0": {
+      "moby": false,
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/node:2.1.0": {
+      "version": "24.20.0"
+    }
+  },
+  "mounts": [
+    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind",
+    "source=/run/host-services/ssh-auth.sock,target=/ssh-agent-macos,type=bind"
+  ],
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/home/vscode/.ssh-agent-resolved.sock"
+  },
+  "postCreateCommand": "git config --global --add safe.directory /workspace && prek install",
+  "postStartCommand": "sh /workspace/.devcontainer/resolve-ssh-agent.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "tamasfe.even-better-toml",
+        "Anthropic.claude-code",
+        "GitHub.vscode-github-actions"
+      ],
+      "settings": {
+        "workbench.browser.enableRemoteProxy": true
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}
