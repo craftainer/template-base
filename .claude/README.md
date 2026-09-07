@@ -45,8 +45,8 @@ this directory).
   - `clear-thought` (`@waldzellai/clear-thought-onepointfive`) — a
     local stdio MCP server exposing structured reasoning/mental-model
     tools, launched via `npx`. `npx` needs Node.js, which is the only
-    reason `../devcontainer.json` adds the pinned `node` feature; Claude
-    Code itself doesn't need it.
+    reason `scripts/develop.sh` installs it (pinned via the Dockerfile's
+    `NODE_VERSION` ARG) — Claude Code itself doesn't need it.
 
   An instance adds its own stack-specific MCP servers here (database,
   object storage, browser automation, ...), pinned to an exact
@@ -72,5 +72,5 @@ this directory).
 - **context7** / **security-guidance**: delete the plugin's
   `enabledPlugins` entry in `settings.json`.
 - **clear-thought**: delete its entry from `../.mcp.json`; if nothing
-  else needs Node.js, also remove the `node` feature from
-  `../devcontainer.json` and its entry from `../devcontainer-lock.json`.
+  else needs Node.js, also remove its install block (and `NODE_VERSION`
+  ARG) from `../Dockerfile`/`scripts/develop.sh`.

@@ -143,12 +143,25 @@ manifest — see that repo's own docs for the two-hop chain this produces.
 
 Every version and config value is defined in exactly one place; nothing
 duplicates or re-pins it elsewhere. Everything pinned here (base image,
-Actions, hook revisions, `prek`/Claude Code CLI/`snip` versions) is
-pinned once, at its single point of use, to an exact patch version —
-never a floating range or `latest` — so Renovate can bump them one at a
-time and the diff shows exactly what changed. An instance's own language
-runtime/package versions follow the same rule in its own
-Dockerfile/manifest.
+Actions, hook revisions, `prek`/Claude Code CLI/`snip`/`uv`/Python/
+Node.js versions) is pinned once, at its single point of use, to an exact
+patch version — never a floating range or `latest` — so Renovate can
+bump them one at a time and the diff shows exactly what changed. An
+instance's own language runtime/package versions follow the same rule in
+its own Dockerfile/manifest.
+
+`python3` and Node.js, both installed by `scripts/develop.sh` and pinned
+via the Dockerfile's `PYTHON_VERSION`/`NODE_VERSION` ARGs, are
+infrastructure tooling only — not an application runtime this template
+assumes. `python3` exists because `prek` needs an interpreter to build
+the venv for any `language: python` hook (`.pre-commit-config.yaml`'s
+`pre-commit-hooks` repo) and because `.github/scripts/*.py` need one
+directly; `uv` (its own `UV_VERSION` ARG) is only the mechanism used to
+install that exact, checksum-verified CPython build rather than an
+unpinned apt package, and stays on `PATH` afterward. Node.js exists
+because `npx` (the `clear-thought` MCP server in `.mcp.json`) needs it.
+An instance that adds Python or Node.js as its own application runtime
+can reuse these directly rather than installing a second copy.
 
 ## Code style
 
