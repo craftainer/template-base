@@ -11,6 +11,18 @@ prek_version=$1
 claude_code_version=$2
 snip_version=$3
 
+# python3 isn't otherwise a dependency of this template, but prek (like
+# pre-commit) needs *some* interpreter to build the venv for any
+# "language: python" hook -- .pre-commit-config.yaml's pre-commit-hooks
+# repo (trailing-whitespace, check-yaml, ...) is exactly that, and
+# .github/scripts/*.py (this template's own stdlib-only tooling) needs one
+# too. Debian's own repo carries no exact-version pin for this, same as
+# libpq-dev in template-fastapi's own develop.sh, so it's unpinned here.
+apt-get update
+apt-get install -y --no-install-recommends python3
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+
 # prek (https://prek.j178.dev/) is installed as a standalone tool, not a
 # project dependency of any particular language's package manager -- every
 # instance, regardless of language, is expected to run

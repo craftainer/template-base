@@ -19,10 +19,12 @@ ARG SSL_CERT_DIR=/etc/ssl/certs
 
 ########################################
 # develop — interactive devcontainer image, based on Microsoft's generic
-# base devcontainer image. No language runtime is installed here at all —
-# an instance adds its own (Python via uv, Rust via rustup, Go, Node.js,
-# OpenTofu/Ansible, ...) on top of this stage, following the same ARG/
-# scripts/develop.sh pattern established below.
+# base devcontainer image. No application language runtime is installed
+# here — an instance adds its own (Python via uv, Rust via rustup, Go,
+# Node.js, OpenTofu/Ansible, ...) on top of this stage, following the same
+# ARG/scripts/develop.sh pattern established below. scripts/develop.sh
+# does install a bare system python3, but only as the interpreter prek
+# and this template's own stdlib-only tooling need — see its own comment.
 ########################################
 FROM mcr.microsoft.com/devcontainers/base:${DEBIAN_VERSION} AS develop
 ARG PREK_VERSION
