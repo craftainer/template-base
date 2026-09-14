@@ -6,13 +6,13 @@
 ARG DEBIAN_VERSION=trixie
 
 # renovate: datasource=github-releases depName=j178/prek
-ARG PREK_VERSION=0.5.2
+ARG PREK_VERSION=0.5.3
 
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.263
+ARG CLAUDE_CODE_VERSION=2.1.270
 
 # renovate: datasource=github-releases depName=edouard-claude/snip
-ARG SNIP_VERSION=0.25.1
+ARG SNIP_VERSION=0.25.2
 
 # uv itself isn't a project dependency manager here -- it's only the
 # mechanism scripts/develop.sh uses to install an exact, checksum-verified
@@ -20,7 +20,7 @@ ARG SNIP_VERSION=0.25.1
 # package. Left on PATH afterward; harmless, and an instance that adds
 # Python as its own application runtime can reuse it directly.
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.10
+ARG UV_VERSION=0.12.13
 
 # python3 is infrastructure tooling, not an application runtime this
 # template assumes: prek needs an interpreter to build the venv for any
@@ -33,7 +33,7 @@ ARG PYTHON_VERSION=3.14.7
 # (the clear-thought MCP server in .mcp.json) is the only thing that
 # needs it.
 # renovate: datasource=node-version depName=node
-ARG NODE_VERSION=24.20.0
+ARG NODE_VERSION=24.21.0
 
 ARG SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ARG SSL_CERT_DIR=/etc/ssl/certs
