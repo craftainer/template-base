@@ -9,7 +9,7 @@ ARG DEBIAN_VERSION=trixie
 ARG PREK_VERSION=0.5.3
 
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.270
+ARG CLAUDE_CODE_VERSION=2.1.278
 
 # renovate: datasource=github-releases depName=edouard-claude/snip
 ARG SNIP_VERSION=0.25.2
@@ -20,7 +20,7 @@ ARG SNIP_VERSION=0.25.2
 # package. Left on PATH afterward; harmless, and an instance that adds
 # Python as its own application runtime can reuse it directly.
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.13
+ARG UV_VERSION=0.12.17
 
 # python3 is infrastructure tooling, not an application runtime this
 # template assumes: prek needs an interpreter to build the venv for any
