@@ -112,28 +112,37 @@ alpha/beta/rc/full release — see "Release: a Makefile contract" below and
 ## Release: a Makefile contract
 
 `release.yml` computes the next SemVer tag (`compute_next_version.py`,
-unchanged across every instance), then runs, in order:
+unchanged across every instance), then drives these targets:
 
-- `make build` — produce whatever the release artifact(s) are (build an
-  image, `cargo build --release`, `npm pack`, `helm package`,
-  `python -m build`, a Terraform plan bundle, ...).
-- `make sbom` — write an SBOM for what `build` produced, in whatever way
-  fits (Syft against an image, `cyclonedx-py`/`npm sbom`/`cargo cyclonedx`
-  against a package, or a no-op target for a repo with nothing to scan).
-- `make release-assets` — populate `dist/` (gitignored) with every file
-  that should be attached to the GitHub release; `release.yml` just globs
-  that directory, so it never needs to know whether it's attaching a
-  `.tar`, `.whl`, `.tgz`, or a chart archive.
-- `make publish` — push to whatever registry applies (OCI registry, PyPI,
-  npm, a Helm repo), skipping cleanly when the relevant registry
-  variable/secret isn't set, or a no-op target when there's nothing to
-  push.
+| Target | Runs | Where | Env available |
+|---|---|---|---|
+| `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
+| `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*` |
+| `release-check` | once, after all arches | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG` |
+| `finalize` | once, after `release-check` | host runner | same as per-arch minus `RELEASE_ARCH` |
 
-`release.yml` then runs `gh release create` with everything found in
-`dist/`. Two environment variables are available to every target:
-`RELEASE_VERSION` (e.g. `1.2.3` or `1.2.3-alpha.1`) and `RELEASE_TAG`
-(the same, `v`-prefixed) — use them where the artifact itself needs to
-embed or tag with the version (e.g. an image tag).
+What each target is for: `build` produces the release artifact(s) (an
+image, `cargo build --release`, `npm pack`, `helm package`, ...); `sbom`
+writes an SBOM for what `build` produced; `release-assets` populates
+`dist/` (gitignored) with every file to attach to the GitHub release;
+`publish` pushes to whatever registry applies, skipping cleanly when its
+variable/secret isn't set; `release-check` runs checks that need the
+backing services (e.g. tests producing a coverage report); `finalize`
+does cross-arch work such as combining per-arch registry tags into one
+multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
+`1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
+embedding or tagging with the version. A single-arch no-op is the
+default: `release-arches` prints `["amd64"]`.
+
+`dist/` rules: each arch leg's `dist/` is uploaded as artifact
+`release-assets-<arch>`, and the final job downloads all of them into one
+`dist/`, so **per-arch file names must include the arch**. `release-check`
+and `finalize` may add more files to `dist/`. `release.yml` then runs
+`gh release create` with every file left in `dist/`.
+
+The arch legs run natively, not under QEMU: `arm64` on `ubuntu-24.04-arm`,
+`amd64` on `ubuntu-24.04`, each overridable with the `CI_RUNNER_ARM64` /
+`CI_RUNNER_AMD64` repository/organization variables.
 
 This repo's own `Makefile` implements every target as a documented
 no-op, since `template-base` ships no artifact — it's both a working

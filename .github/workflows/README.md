@@ -18,24 +18,14 @@
 - `release.yml` — manually triggered. Takes a release channel
   (`alpha`/`beta`/`rc`/`full`) and a SemVer 2 bump
   (`major`/`minor`/`patch`/`none`), computes the next tag via
-  `../scripts/compute_next_version.py`, builds the `runner` stage of the
-  root `Dockerfile` natively for both `amd64` and `arm64` (no QEMU —
-  see "Architecture matrix" below), and creates a GitHub release with
-  auto-generated notes and both images attached as arch-suffixed OCI
-  tarballs (`template-fastapi-<version>-amd64.tar` /
-  `-arm64.tar`), one SPDX-JSON SBOM per arch (via
-  `anchore/sbom-action`/Syft), and a single `coverage.xml` report from
-  running the test suite against the released commit. Each built image
-  (both tarballs and, if configured, the registry push) carries
-  standard `org.opencontainers.image.*` labels via
-  `docker/metadata-action`, plus two custom
-  `io.github.<repository_owner>.*` labels pointing at that arch's SBOM
-  and the shared coverage-report release asset, so the image is
-  self-describing. If an OCI registry is configured (see "OCI registry"
-  below), each arch is pushed under its own `<version>-<arch>` tag and
-  then combined into one real multi-arch manifest list at the plain
-  `<version>` tag via `docker buildx imagetools create`, so `docker pull
-  template-fastapi:<version>` resolves to the right arch automatically.
+  `../scripts/compute_next_version.py`, then drives the instance's
+  Makefile release contract (see `../../docs/TEMPLATE.md`'s "Release: a
+  Makefile contract"): `make release-arches` picks the arch matrix;
+  `build`/`sbom`/`release-assets`/`publish` run once per arch, natively
+  (no QEMU — see "Architecture matrix" below), each leg uploading its
+  `dist/` as `release-assets-<arch>`; then one job downloads them all,
+  runs `make release-check` inside the devcontainer and `make finalize`
+  on the host, and creates a GitHub release with everything in `dist/`.
 - `moderate-bug-triage.yml` / `moderate-bug-fix.yml` /
   `moderate-bug-fix-apply.yml` / `moderate-feature-triage.yml` /
   `moderate-feature-build.yml` / `moderate-feature-build-apply.yml` /
@@ -253,6 +243,20 @@ the registry push) carry the same label set, computed once by
   spec's own keys) and derived from `github.repository_owner` alone, so
   it's one stable prefix per org across every repo/template instance
   that org owns, rather than a per-repo namespace to look up each time.
+
+## Release variables and secrets
+
+`release.yml` passes these to the Makefile targets as environment
+variables of the same name; unset ones are empty, and a target should skip
+cleanly when the registry isn't configured.
+
+- `OCI_REGISTRY` (variable) — registry host (e.g. `ghcr.io`).
+- `OCI_IMAGE_NAME` (variable, optional) — image path within the registry.
+- `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets) —
+  registry credentials.
+- `CI_RUNNER_AMD64` / `CI_RUNNER_ARM64` (variables, optional) — runner
+  labels for each arch leg, defaulting to `ubuntu-24.04` /
+  `ubuntu-24.04-arm`.
 
 ## Do
 
