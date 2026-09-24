@@ -4,7 +4,7 @@
     "compose.yml",
     "compose.instance.yml"
   ],
-  "service": "app",
+  "service": "myapp",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
   "features": {
