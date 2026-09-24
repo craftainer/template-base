@@ -20,10 +20,11 @@ services:
       # adds one.
       - claude-config:/home/vscode/.claude
     command: sleep infinity
-    # No ports: mapping and no networks: block — see the root README's
-    # "Don't". Host access comes from devcontainer.json's forwardPorts;
-    # an instance with backing services reaches them by name on the
-    # default network compose generates for this project.
+    # No ports: mapping and no networks: block — see .devcontainer/
+    # README.md's "Don't". An instance that needs host access adds
+    # forwardPorts to devcontainer.json; one with backing services
+    # reaches them by name on the default network compose generates for
+    # this project.
 
 volumes:
   # Persists Claude Code CLI session/credential state across container

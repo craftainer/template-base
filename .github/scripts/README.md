@@ -36,7 +36,6 @@
 
 - Keep scripts here dependency-free (stdlib only) — they run before
   `uv sync` in the release workflow.
-- Add a test in `../../tests/` for any new logic here that isn't trivial.
 
 ## Don't
 

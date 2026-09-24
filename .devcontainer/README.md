@@ -2,7 +2,7 @@
 
 - `devcontainer.json` — references `compose.yml` as the devcontainer's
   sole `dockerComposeFile`, and configures the devcontainer itself
-  (features, forwarded ports, editor settings).
+  (features, mounts, editor settings).
 - `compose.yml` — the dev service (`app`), built from the top-level
   `Dockerfile`'s `develop` stage. An instance that needs backing services
   (a database, a queue, ...) adds its own `stack/` directory (one
