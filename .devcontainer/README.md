@@ -1,14 +1,17 @@
 # .devcontainer/
 
-- `devcontainer.json` — references `compose.yml` as the devcontainer's
-  sole `dockerComposeFile`, and configures the devcontainer itself
+- `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
+  as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
   (features, mounts, editor settings).
 - `compose.yml` — the dev service (`app`), built from the top-level
   `Dockerfile`'s `develop` stage. An instance that needs backing services
   (a database, a queue, ...) adds its own `stack/` directory (one
   subdirectory per service, each with its own compose fragment) and an
-  `include:` list here pointing at them — see `stack/README.md`'s
+  `include:` list in `compose.instance.yml` pointing at them — see `stack/README.md`'s
   "Devcontainer stack pattern" convention once an instance adds one.
+- `compose.instance.yml` — instance-owned stub (`ignore` tier, never
+  touched by sync): an instance's `include:` list and extra `services.app`
+  settings. See `docs/TEMPLATE.md`'s "Instance extension points".
 
 ## Docker-in-Docker vs. the host's Docker
 
@@ -131,7 +134,7 @@ need the window reconnected, not a fresh image.
 
 ## Do
 
-- Add a new compose fragment's path to `compose.yml`'s own `include:`
+- Add a new compose fragment's path to `compose.instance.yml`'s `include:`
   list the same time you add the fragment — an unreferenced file starts
   nothing.
 - Keep service credentials and connection settings in the compose files'

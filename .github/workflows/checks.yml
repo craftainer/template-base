@@ -65,7 +65,7 @@ jobs:
       # tears it down -- that's fine for a throwaway CI VM, but this repo
       # wants a clean, explicit teardown regardless. Selecting the stack
       # by project name alone (no -f list) also covers any services an
-      # instance adds through compose.yml's `include:`.
+      # instance adds through compose.instance.yml's `include:`.
       - name: Tear down devcontainer stack
         if: always()
         run: |

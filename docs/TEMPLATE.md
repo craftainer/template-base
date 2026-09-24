@@ -32,8 +32,10 @@ artifact on top of the shape described here.
 - `Dockerfile` — a single `develop` stage (the devcontainer image). An
   instance adds its own `builder`/`runner` (or equivalent) stages on top
   for its own release artifact.
-- `scripts/develop.sh` — the `develop` stage's setup script; see
-  `scripts/README.md`.
+- `scripts/develop.sh`, `scripts/post-create.sh` — the `develop` stage's
+  setup script and the devcontainer's `postCreateCommand`, each running
+  an instance hook directory (`develop.d/`, `post-create.d/`); see
+  `scripts/README.md` and "Instance extension points" below.
 - `Makefile` — the release contract `release.yml` drives
   (`build`/`sbom`/`release-assets`/`publish`), each a documented no-op
   here — see "Release: a Makefile contract" below.
@@ -43,12 +45,34 @@ artifact on top of the shape described here.
   this repository; general conventions live in this file and each
   directory's own `README.md` instead.
 
+## Instance extension points
+
+Base-owned files stay `replace` tier (a sync overwrites them) and expose
+hooks an instance fills with files it owns, so an instance never edits a
+base-owned file directly. Don't edit `Dockerfile`, `scripts/develop.sh`
+or `compose.yml` in an instance; use the hooks below.
+
+| Hook | Base side (template-owned) | Instance side (instance-owned) |
+|---|---|---|
+| Extra devcontainer tooling | `Dockerfile` `develop` stage runs every `scripts/develop.d/*.sh` after `develop.sh` | `scripts/develop.d/NN-name.sh` |
+| Extra post-create steps | `scripts/post-create.sh`, run by `devcontainer.json`'s `postCreateCommand`, runs every `scripts/post-create.d/*.sh` | `scripts/post-create.d/NN-name.sh` |
+| Extra compose services / dev-service settings | `devcontainer.json` `"dockerComposeFile": ["compose.yml", "compose.instance.yml"]` | `.devcontainer/compose.instance.yml` (base ships a stub, `ignore` tier) |
+| Runtime image | nothing (base `Dockerfile` is `develop`-only) | `app.Dockerfile` + `app.Dockerfile.dockerignore` |
+
+Files with no include mechanism of their own (JSON configs,
+`.pre-commit-config.yaml` — prek has no include) are `merge` tier, so an
+instance's additions survive a sync. The runtime image goes in its own
+`app.Dockerfile` so it never collides with the template-owned
+`Dockerfile`; BuildKit picks up `app.Dockerfile.dockerignore`
+automatically for `-f app.Dockerfile`.
+
 ## Getting started
 
 1. Open this folder in a devcontainer (VS Code: "Reopen in Container" —
    `.vscode/extensions.json` recommends the extension that offers this —
    or any tool that reads `.devcontainer/devcontainer.json`). This builds
-   the `develop` stage and installs the git hooks via `postCreateCommand`.
+   the `develop` stage and installs the git hooks via `postCreateCommand`
+   (`scripts/post-create.sh`).
 2. There's nothing to run yet — `template-base` ships no application. An
    instance documents its own "run the app" / "run the CLI" step here.
 
@@ -134,9 +158,10 @@ resolve. An instance that predates this workflow bootstraps its
 `.github/template-sync-state.json` via the workflow's manual
 `initial_sync_tag`/`template_repo` inputs first.
 
-An instance that isn't itself a template can't list its own files (`src/`,
-say) in that manifest, since it's `replace`-tier and would be overwritten.
-It lists them under an `ignore:` key in the instance-owned
+An instance that isn't itself a template shouldn't edit that manifest to
+list its own files (`src/`, say): it's `merge`-tier, so edits would
+conflict with later syncs. It lists them under an `ignore:` key in the
+instance-owned
 `.github/template-sync-manifest.local.yml` instead; the
 `template-sync-manifest` check merges that file in, but sync never reads
 it, and it accepts no other tier.
@@ -145,7 +170,8 @@ A repo can itself be both an instance of `template-base` *and* its own
 template for further instances (e.g. `template-fastapi`): its own
 `.github/template-sync-manifest.yml` classifies its *own* tracked files
 for *its* downstream instances, entirely separate from this template's
-manifest — see that repo's own docs for the two-hop chain this produces.
+manifest (it edits the manifest directly and resolves base's additions by
+hand) — see that repo's own docs for the two-hop chain this produces.
 
 ## Versions and config
 

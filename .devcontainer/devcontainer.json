@@ -1,7 +1,8 @@
 {
   "name": "template-base",
   "dockerComposeFile": [
-    "compose.yml"
+    "compose.yml",
+    "compose.instance.yml"
   ],
   "service": "app",
   "workspaceFolder": "/workspace",
@@ -19,7 +20,7 @@
   "remoteEnv": {
     "SSH_AUTH_SOCK": "/home/vscode/.ssh-agent-resolved.sock"
   },
-  "postCreateCommand": "git config --global --add safe.directory /workspace && prek install",
+  "postCreateCommand": "bash /workspace/scripts/post-create.sh",
   "postStartCommand": "sh /workspace/.devcontainer/resolve-ssh-agent.sh",
   "customizations": {
     "vscode": {

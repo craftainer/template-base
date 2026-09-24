@@ -65,6 +65,10 @@ ENV SSL_CERT_FILE=${SSL_CERT_FILE} \
 COPY scripts/develop.sh /tmp/develop.sh
 RUN bash /tmp/develop.sh "$PREK_VERSION" "$CLAUDE_CODE_VERSION" "$SNIP_VERSION" "$UV_VERSION" "$PYTHON_VERSION" "$NODE_VERSION"
 
+# Instance hook: scripts/develop.d/*.sh, see that directory's README.md.
+COPY scripts/develop.d/ /tmp/develop.d/
+RUN for f in /tmp/develop.d/*.sh; do [ -e "$f" ] || continue; echo "==> $f"; bash "$f" || exit 1; done
+
 USER vscode
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
