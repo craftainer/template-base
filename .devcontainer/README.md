@@ -137,6 +137,13 @@ need the window reconnected, not a fresh image.
 - Keep service credentials and connection settings in the compose files'
   `environment:` blocks, so opening the devcontainer is the only setup
   step.
+- Commit `devcontainer-lock.json` in the same change as any feature
+  edit in `devcontainer.json`. Regenerate it with
+  `npx @devcontainers/cli upgrade --workspace-folder .`, or by
+  rebuilding the devcontainer. Renovate bumps feature versions but
+  never regenerates this file, so its feature-bump PRs fail the
+  `devcontainer-lock` check (and don't automerge) until someone
+  pushes the regenerated lockfile to the Renovate branch.
 
 ## Don't
 

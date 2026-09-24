@@ -8,6 +8,10 @@
   and checks that every git-tracked path matches exactly one tier;
   backs both the `template-sync-manifest` prek hook and
   `../workflows/template-sync.yml`'s own use of the manifest.
+- `check_devcontainer_lock.py` — checks that every remote feature in
+  `../../.devcontainer/devcontainer.json` has a matching entry in
+  `devcontainer-lock.json` and vice versa; backs the
+  `devcontainer-lock` prek hook.
 - `template_sync.py` — the diff/apply/state-file logic behind
   `../workflows/template-sync.yml`: picks the latest tag for a channel,
   applies the `replace`/`merge` tiers between two template checkouts and
