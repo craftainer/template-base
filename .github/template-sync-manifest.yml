@@ -16,6 +16,10 @@
 # separate manifest of its own, covering its own (larger) tracked-file set --
 # see that repo's docs/TEMPLATE.md.
 #
+# An instance that isn't itself a template lists its own files (e.g. src/) in
+# ../template-sync-manifest.local.yml instead -- same format, "ignore" tier
+# only, read by the completeness check but never by sync.
+#
 # Patterns: a trailing "/" matches the directory and everything under it; "*"
 # matches any run of characters (including "/"); anything else is an exact
 # path. Every pattern here is anchored at the repo root.
@@ -86,6 +90,10 @@ ignore:
 
   # Instance-owned bookkeeping, written only by the sync workflow itself.
   - .github/template-sync-state.json
+
+  # An instance's own extra "ignore" patterns for paths this manifest can't
+  # know about (see docs/TEMPLATE.md's "Template sync" section).
+  - .github/template-sync-manifest.local.yml
 
 merge:
   # Project identity (name/description) is interpolated per instance;

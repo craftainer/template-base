@@ -7,7 +7,9 @@
 - `template_sync_manifest.py` — parses `../template-sync-manifest.yml`
   and checks that every git-tracked path matches exactly one tier;
   backs both the `template-sync-manifest` prek hook and
-  `../workflows/template-sync.yml`'s own use of the manifest.
+  `../workflows/template-sync.yml`'s own use of the manifest. The check
+  also merges in an instance's optional
+  `../template-sync-manifest.local.yml` (`ignore` tier only).
 - `check_devcontainer_lock.py` — checks that every remote feature in
   `../../.devcontainer/devcontainer.json` has a matching entry in
   `devcontainer-lock.json` and vice versa; backs the

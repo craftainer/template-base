@@ -134,6 +134,13 @@ resolve. An instance that predates this workflow bootstraps its
 `.github/template-sync-state.json` via the workflow's manual
 `initial_sync_tag`/`template_repo` inputs first.
 
+An instance that isn't itself a template can't list its own files (`src/`,
+say) in that manifest, since it's `replace`-tier and would be overwritten.
+It lists them under an `ignore:` key in the instance-owned
+`.github/template-sync-manifest.local.yml` instead; the
+`template-sync-manifest` check merges that file in, but sync never reads
+it, and it accepts no other tier.
+
 A repo can itself be both an instance of `template-base` *and* its own
 template for further instances (e.g. `template-fastapi`): its own
 `.github/template-sync-manifest.yml` classifies its *own* tracked files
