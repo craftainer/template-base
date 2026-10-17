@@ -203,7 +203,7 @@ hand) — see that repo's own docs for the two-hop chain this produces.
 
 Every version and config value is defined in exactly one place; nothing
 duplicates or re-pins it elsewhere. Everything pinned here (base image,
-Actions, hook revisions, `prek`/Claude Code CLI/`snip`/`uv`/Python/
+Actions, hook revisions, `prek`/Claude Code CLI/`snip`/`gh`/`uv`/Python/
 Node.js versions) is pinned once, at its single point of use, to an exact
 patch version — never a floating range or `latest` — so Renovate can
 bump them one at a time and the diff shows exactly what changed. An
