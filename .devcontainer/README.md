@@ -3,8 +3,12 @@
 - `devcontainer.json` — references `compose.yml` and `compose.instance.yml`
   as the devcontainer's `dockerComposeFile`, and configures the devcontainer itself
   (features, mounts, editor settings).
-- `compose.yml` — the dev service (`myapp`), built from the top-level
-  `Dockerfile`'s `develop` stage. An instance that needs backing services
+- `Dockerfile` — the devcontainer image (a single `develop` stage), built
+  with the repo root as context; `Dockerfile.dockerignore` holds its
+  build-context excludes. The top-level `Dockerfile` is reserved for an
+  instance's runtime image (`../docs/TEMPLATE.md`).
+- `compose.yml` — the dev service (`myapp`), built from `Dockerfile`'s
+  `develop` stage. An instance that needs backing services
   (a database, a queue, ...) adds its own `stack/` directory (one
   subdirectory per service, each with its own compose fragment) and an
   `include:` list in `compose.instance.yml` pointing at them — see `stack/README.md`'s
@@ -119,7 +123,7 @@ step there. Still worth doing once the container is back:
 
 - Run `prek run --all-files --hook-stage manual` — the same check-suite
   that gates CI (`checks.yml`) — to confirm whatever motivated the
-  rebuild (a `Dockerfile`/`scripts/develop.sh` change, a new tool) works
+  rebuild (a `.devcontainer/Dockerfile`/`scripts/develop.sh` change, a new tool) works
   end-to-end inside the container, not just that the image built.
 - If the change added, removed, or reordered a `mounts` entry, confirm
   it actually took effect — mounts apply only at container creation, not
@@ -129,7 +133,7 @@ step there. Still worth doing once the container is back:
   picked up the new list.
 
 A plain "Reopen in Container" (no rebuild) is enough for changes outside
-`.devcontainer/`, `Dockerfile`, and `scripts/develop.sh` — those only
+`.devcontainer/` and `scripts/develop.sh` — those only
 need the window reconnected, not a fresh image.
 
 ## Do
