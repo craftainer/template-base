@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.28
-# Single-stage build: develop (devcontainer). A downstream instance adds its
-# own builder/runner stages on top of this same base image and
-# postCreateCommand structure -- see docs/TEMPLATE.md's "Contents" section.
+# Single-stage build: develop (the devcontainer image). Built with the repo
+# root as context (see compose.yml). The repo-root Dockerfile is reserved for
+# an instance's own runtime image -- see docs/TEMPLATE.md's "Contents" and
+# "Instance extension points".
 
 ARG DEBIAN_VERSION=trixie
 
