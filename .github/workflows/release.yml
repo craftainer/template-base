@@ -68,6 +68,13 @@ jobs:
       fail-fast: false
       matrix:
         arch: ${{ fromJSON(needs.version.outputs.arches) }}
+    # Job-level permissions replace the workflow-level ones, so
+    # `contents: write` is repeated. `id-token: write` lets `make publish`
+    # mint a GitHub OIDC token for PyPI trusted publishing; repos that
+    # don't publish to PyPI never request one, so it is unused for them.
+    permissions:
+      contents: write
+      id-token: write
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ matrix.arch == 'arm64' && (vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm') || (vars.CI_RUNNER_AMD64 || 'ubuntu-24.04') }}
     env:
