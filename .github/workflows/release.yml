@@ -85,6 +85,9 @@ jobs:
       OCI_IMAGE_NAME: ${{ vars.OCI_IMAGE_NAME }}
       OCI_REGISTRY_USERNAME: ${{ secrets.OCI_REGISTRY_USERNAME }}
       OCI_REGISTRY_PASSWORD: ${{ secrets.OCI_REGISTRY_PASSWORD }}
+      # Package repos only: `testpypi` or `pypi` selects the index
+      # `make publish` uploads to via trusted publishing; unset skips it.
+      PYPI_PUBLISH: ${{ vars.PYPI_PUBLISH }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Check out repository
@@ -150,11 +153,14 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          # So a package's release-check can also install what publish uploaded.
+          PYPI_PUBLISH: ${{ vars.PYPI_PUBLISH }}
         with:
           runCmd: make release-check
           env: |
             RELEASE_VERSION
             RELEASE_TAG
+            PYPI_PUBLISH
 
       # devcontainers/ci starts the full compose stack but never tears it
       # down -- see checks.yml's identical step.
