@@ -261,6 +261,20 @@ cleanly when the registry isn't configured.
 - `CI_RUNNER_AMD64` / `CI_RUNNER_ARM64` (variables, optional) — runner
   labels for each arch leg, defaulting to `ubuntu-24.04` /
   `ubuntu-24.04-arm`.
+- `PYPI_PUBLISH` (variable, optional) — `testpypi` or `pypi`; selects the
+  index `make publish` uploads to via trusted publishing. Unset skips it.
+- `NPM_PUBLISH` / `CARGO_PUBLISH` (variables, optional) — non-empty makes
+  `make publish` push to npm / crates.io; unset skips it. Passed to
+  `build` and, like `PYPI_PUBLISH`, forwarded to `release-check` so it
+  can install what publish uploaded.
+- `NPM_TOKEN` / `CARGO_REGISTRY_TOKEN` (secrets, optional) — bootstrap
+  tokens for the first release of a package, before trusted publishing
+  is configured. Exposed only on the `make publish` step's `env:`, never
+  job-wide or to any other step. An unset secret arrives as an empty
+  string, so the Makefile must treat empty as absent. `NPM_TOKEN` is
+  deliberately not mapped to `NODE_AUTH_TOKEN`: npm's OIDC trusted
+  publishing breaks when that variable is set, even to an empty string,
+  so the npm template's Makefile decides what to do with `NPM_TOKEN`.
 
 ## Do
 
@@ -268,8 +282,10 @@ cleanly when the registry isn't configured.
   nothing broader (`template-sync.yml` also needs `pull-requests:
   write`, for nothing else); leave `checks.yml` at `contents: read`.
 - Keep `id-token: write` on `release.yml`'s `build` job only (the one
-  running `make publish`): PyPI trusted publishing via GitHub OIDC. It
-  is unused by repos that don't publish to PyPI.
+  running `make publish`): PyPI, npm and crates.io trusted publishing
+  via GitHub OIDC. It is unused by repos that publish to none of them.
+- Keep `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` on the `make publish`
+  step's `env:` only.
 
 ## Don't
 
