@@ -42,8 +42,9 @@ each item straight into a brief:
   plan creates); a PR the user merges is never among them.
 - **User gates:** a table of every outward-facing or hard-to-reverse
   step (creating repos, pushing, opening PRs, publishing, tagging) that
-  waits for the user's explicit yes, except what the kickoff gate or the
-  standing approvals grant landers (pushing and opening the wave PRs).
+  waits for the user's explicit yes, except what the plan's kickoff
+  gate (G0) or its standing approvals grant landers (pushing and
+  opening the wave PRs).
 - **Decision log:** a dated table of settled decisions. Executors treat
   it as final, and the orchestrator appends to it as it resolves
   escalations.

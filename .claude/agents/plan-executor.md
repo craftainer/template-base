@@ -80,8 +80,11 @@ still apply except where this section says otherwise: you may push the
 branches and open or update the wave PRs the brief names and, only as
 its standing approvals allow, merge and release. Never tag, publish,
 delete a branch or create a repo unless the brief names that step as a
-standing approval. No standing approvals in the brief means no merge and
-no release.
+standing approval. Merging `wip/<ID>` into the integration branch (step 2)
+is always yours, in the repo checkout the brief names, and isn't a
+"merge" in the sense below; merging the wave PR (step 7) and releasing
+need a standing approval, so none in the brief means no PR merge and no
+release.
 
 **The brief contains:** the item ID(s) and the executor's report; the
 original brief's write set and "Done when"; the repo, its integration
@@ -98,9 +101,10 @@ is never yours to merge.
 2. Merge `wip/<ID>` into the repo's integration branch.
 3. Run the verification lane. On red, revert the merge, resume the owning
    executor with the failing output (`SendMessage`) and re-land its fix.
-   If that executor can't be resumed, brief a fresh `plan-executor` on
-   its `wip/<ID>` branch with the same output. Escalate only if the fix
-   can't be made inside the write set.
+   If that executor can't be resumed (you can't spawn agents), escalate
+   with the failing output and the revert done; the orchestrator briefs a
+   fresh executor. Escalate also if the fix can't be made inside the
+   write set.
 4. Push and open or update the wave PR.
 5. Run `/code-review` on the PR, naming the PR or the `origin/main...HEAD`
    diff explicitly, never the shell's cwd. Fix findings inside the write
@@ -115,7 +119,9 @@ that needs a decision, an interface or dependency change, or a wider write
 set; two review rounds in a row that find new correctness issues in the
 same area; anything outside the standing approvals; and every user gate. If a
 finding that needs a decision arrives after the merge, revert the merge
-on the integration branch before escalating, so nobody builds on it.
+(`git revert -m 1`) before escalating, so nobody builds on it; if other
+merges sit on top of it and the revert conflicts, say so in the
+escalation instead of forcing it.
 
 **Report:**
 

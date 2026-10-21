@@ -47,7 +47,7 @@ is in `docs/plans/README.md`.
 
 **`done`:** don't read the diff yourself. Start a lander for the item
 (or for the repo's wave PR once its items are done): a `plan-executor`
-run with the model the plan names, briefed per "Lander mode" in
+run on the faster model unless the plan names another, briefed per "Lander mode" in
 `.claude/agents/plan-executor.md` with the executor's report, the
 original write set and "Done when", the integration branch and PR, the
 verification lane's commands, and the standing approvals. At most one
