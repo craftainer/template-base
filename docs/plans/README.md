@@ -34,14 +34,16 @@ each item straight into a brief:
   plan, so two items never pick the same one.
 - **Serialized lanes:** anything sharing devcontainer services
   (integration and e2e suites, load tests and benchmarks) runs one at a
-  time, outside the parallel waves, by a lander (never the orchestrator). Measurements also need a quiet
-  window, with no parallel agents competing for CPU.
+  time, outside the parallel waves, by a lander (never the orchestrator).
+  Measurements also need a quiet window, with no parallel agents
+  competing for CPU.
 - **Standing approvals:** which merges and releases landers may do
   without asking (for example, template releases and merges in repos the
   plan creates); a PR the user merges is never among them.
 - **User gates:** a table of every outward-facing or hard-to-reverse
   step (creating repos, pushing, opening PRs, publishing, tagging) that
-  waits for the user's explicit yes.
+  waits for the user's explicit yes, except what the kickoff gate or the
+  standing approvals grant landers (pushing and opening the wave PRs).
 - **Decision log:** a dated table of settled decisions. Executors treat
   it as final, and the orchestrator appends to it as it resolves
   escalations.

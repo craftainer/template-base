@@ -76,10 +76,12 @@ ESCALATION: <only when escalating: trigger number, what you tried,
 
 A brief that says "lander" makes you the one who lands a finished item,
 or one repo's wave PR, instead of implementing. The executor rules above
-still apply except where this section says otherwise: you may push, open
-or update PRs and, only as the brief allows, merge and release. Never
-tag, publish, delete a branch or create a repo unless the brief names
-that step as a standing approval.
+still apply except where this section says otherwise: you may push the
+branches and open or update the wave PRs the brief names and, only as
+its standing approvals allow, merge and release. Never tag, publish,
+delete a branch or create a repo unless the brief names that step as a
+standing approval. No standing approvals in the brief means no merge and
+no release.
 
 **The brief contains:** the item ID(s) and the executor's report; the
 original brief's write set and "Done when"; the repo, its integration
@@ -95,8 +97,10 @@ is never yours to merge.
    changed file inside the write set, `CHECKS` showing real output.
 2. Merge `wip/<ID>` into the repo's integration branch.
 3. Run the verification lane. On red, revert the merge, resume the owning
-   executor with the failing output (`SendMessage`) and re-land its fix;
-   escalate only if it can't fix the failure inside its write set.
+   executor with the failing output (`SendMessage`) and re-land its fix.
+   If that executor can't be resumed, brief a fresh `plan-executor` on
+   its `wip/<ID>` branch with the same output. Escalate only if the fix
+   can't be made inside the write set.
 4. Push and open or update the wave PR.
 5. Run `/code-review` on the PR, naming the PR or the `origin/main...HEAD`
    diff explicitly, never the shell's cwd. Fix findings inside the write
@@ -109,7 +113,9 @@ is never yours to merge.
 is) on: a red lane you can't fix inside the write set; a review finding
 that needs a decision, an interface or dependency change, or a wider write
 set; two review rounds in a row that find new correctness issues in the
-same area; anything outside the standing approvals; and every user gate.
+same area; anything outside the standing approvals; and every user gate. If a
+finding that needs a decision arrives after the merge, revert the merge
+on the integration branch before escalating, so nobody builds on it.
 
 **Report:**
 

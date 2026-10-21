@@ -92,13 +92,11 @@ Practices below are distilled from Anthropic's own Claude Code guidance
 - **Execute multi-item work as an orchestrator.** When executing a
   `docs/plans/` plan, or any task that splits into several independent
   items (closing multiple test coverage gaps, for example), the main
-  session only orchestrates: it keeps the queue, writes briefs, decides
-  escalations and raises user gates. Executors implement and landers
-  (both `plan-executor` subagents, `.claude/agents/plan-executor.md`, on
-  the faster model by default) review, merge, verify and release, so the
-  main session doesn't review diffs, run verification lanes or
-  `/code-review`, merge or trigger releases itself. Use the
-  `plan-execution` skill (`.claude/skills/plan-execution/`) for how.
+  session only orchestrates, deciding and raising user gates; executors
+  and landers (`plan-executor` subagents,
+  `.claude/agents/plan-executor.md`) implement, review, merge, verify
+  and release. Use the `plan-execution` skill
+  (`.claude/skills/plan-execution/`) for how.
 - **Flag devcontainer changes as needing a rebuild.** Editing anything
   under `.devcontainer/` (compose files, `stack/`, Dockerfiles) doesn't
   take effect in the running container — tell the user a rebuild is
