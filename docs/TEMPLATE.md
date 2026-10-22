@@ -172,9 +172,9 @@ upload.
 
 **Package instance checklist.** An instance that publishes a package also:
 sets `repository`, homepage and bugs URLs in its package manifest
-(`package.json`, `pyproject.toml`, `Cargo.toml`) -- registries with
-provenance or trusted publishing check them against the publishing
-repository; and implements `publish-packages` itself, which replaces base's
+(`package.json`, `pyproject.toml`, `Cargo.toml`) -- npm provenance
+verifies the repository URL against the publishing repository, and the
+other registries show these links to users; and implements `publish-packages` itself, which replaces base's
 default (the `DefaultPublishPackagesTest` in `.github/scripts` skips itself
 once the default message is gone). `release-check` receives
 `GITHUB_REPOSITORY`, so an instance can run repository guards there.

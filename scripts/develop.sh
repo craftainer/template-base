@@ -31,7 +31,8 @@ gh_version=$7
 #   `-L` without `--location-trusted` is deliberate: curl drops a custom
 #   Authorization header (including one from `-H @file`) when a redirect
 #   leaves the original host (GitHub release downloads redirect to
-#   objects.githubusercontent.com), so the token never reaches another host.
+#   objects.githubusercontent.com), so the token never reaches another host. That needs curl >= 7.58
+#   (older versions forwarded it, CVE-2018-1000007).
 #   Without a token (a local build) nothing changes.
 # - retry: reruns a whole step (an installer piped into sh) a bounded
 #   number of times with doubling delays, for installers that do their own
