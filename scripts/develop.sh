@@ -28,6 +28,11 @@ gh_version=$7
 #   id=github_token,env=GITHUB_TOKEN`), never a build arg, so it is not
 #   baked into a layer. The header is read from a private temp file
 #   (`-H @file`) so the token never appears in a process's argument list.
+#   `-L` without `--location-trusted` is deliberate: curl drops a custom
+#   Authorization header (including one from `-H @file`) when a redirect
+#   leaves the original host (GitHub release downloads redirect to
+#   objects.githubusercontent.com), so the token never reaches another host. That needs curl >= 7.58
+#   (older versions forwarded it, CVE-2018-1000007).
 #   Without a token (a local build) nothing changes.
 # - retry: reruns a whole step (an installer piped into sh) a bounded
 #   number of times with doubling delays, for installers that do their own
@@ -35,6 +40,8 @@ gh_version=$7
 fetch() {
     local url=$1
     shift
+    # `${auth[@]+...}` below: an empty array is an unbound variable under
+    # `set -u` on bash < 4.4.
     local auth=() header_file=""
     if [ -n "${GITHUB_TOKEN:-}" ]; then
         case "$url" in
@@ -46,7 +53,7 @@ fetch() {
         esac
     fi
     local status=0
-    curl -fsSL --retry 5 --retry-max-time 60 --retry-all-errors "${auth[@]}" "$@" "$url" || status=$?
+    curl -fsSL --retry 5 --retry-max-time 60 --retry-all-errors ${auth[@]+"${auth[@]}"} "$@" "$url" || status=$?
     [ -z "$header_file" ] || rm -f "$header_file"
     return "$status"
 }

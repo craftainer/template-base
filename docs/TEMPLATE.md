@@ -136,7 +136,7 @@ unchanged across every instance), then drives these targets:
 | `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
 | `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*`; no package-registry variables or secrets, and no OIDC token |
 | `publish-packages` | once, after all arches, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
-| `release-check` | once, after all arches | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH` |
+| `release-check` | once, after all arches | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH` |
 | `finalize` | once, after `release-check` | host runner | same as per-arch minus `RELEASE_ARCH` |
 
 What each target is for: `build` produces the release artifact(s) (an
@@ -169,6 +169,15 @@ instance kept it) fails with a message naming the variable that is set;
 an instance whose Makefile has no such target fails with `make: No rule
 to make target`. Either way the release stops instead of skipping the
 upload.
+
+**Package instance checklist.** An instance that publishes a package also:
+sets `repository`, homepage and bugs URLs in its package manifest
+(`package.json`, `pyproject.toml`, `Cargo.toml`) -- npm provenance
+verifies the repository URL against the publishing repository, and the
+other registries show these links to users; and implements `publish-packages` itself, which replaces base's
+default (the `DefaultPublishPackagesTest` in `.github/scripts` skips itself
+once the default message is gone). `release-check` receives
+`GITHUB_REPOSITORY`, so an instance can run repository guards there.
 
 `dist/` rules: each arch leg's `dist/` is uploaded as artifact
 `release-assets-<arch>`, and the final job downloads all of them into one

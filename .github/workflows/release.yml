@@ -213,6 +213,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           # So a package's release-check can also install what publish uploaded.
           PYPI_PUBLISH: ${{ vars.PYPI_PUBLISH }}
           NPM_PUBLISH: ${{ vars.NPM_PUBLISH }}
@@ -222,6 +223,7 @@ jobs:
           env: |
             RELEASE_VERSION
             RELEASE_TAG
+            GITHUB_REPOSITORY
             PYPI_PUBLISH
             NPM_PUBLISH
             CARGO_PUBLISH
