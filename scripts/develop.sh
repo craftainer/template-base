@@ -46,7 +46,7 @@ fetch() {
         esac
     fi
     local status=0
-    curl -fsSL --retry 5 --retry-max-time 180 --retry-all-errors "${auth[@]}" "$@" "$url" || status=$?
+    curl -fsSL --retry 5 --retry-max-time 60 --retry-all-errors "${auth[@]}" "$@" "$url" || status=$?
     [ -z "$header_file" ] || rm -f "$header_file"
     return "$status"
 }
@@ -65,19 +65,31 @@ retry() {
     done
 }
 
+# Installers are downloaded to a file and then run, never piped straight
+# from curl: a retried download would otherwise re-emit the script into a
+# shell that is already executing its first, truncated part. The file is
+# world-readable because the installer runs as the vscode user.
+installer_script=""
+trap 'rm -f "$installer_script"' EXIT
+download_installer() {
+    installer_script="$(mktemp)"
+    chmod a+r "$installer_script"
+    fetch "$1" -o "$installer_script"
+}
+
 install_uv() {
-    fetch "https://releases.astral.sh/github/uv/releases/download/${uv_version}/uv-installer.sh" \
-        | sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh
+    download_installer "https://releases.astral.sh/github/uv/releases/download/${uv_version}/uv-installer.sh" \
+        && sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh "$installer_script"
 }
 
 install_prek() {
-    fetch "https://github.com/j178/prek/releases/download/v${prek_version}/prek-installer.sh" \
-        | sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh
+    download_installer "https://github.com/j178/prek/releases/download/v${prek_version}/prek-installer.sh" \
+        && sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh "$installer_script"
 }
 
 install_claude() {
-    fetch https://claude.ai/install.sh \
-        | sudo -u vscode env HOME=/home/vscode bash -s "$claude_code_version"
+    download_installer https://claude.ai/install.sh \
+        && sudo -u vscode env HOME=/home/vscode bash "$installer_script" "$claude_code_version"
 }
 
 # xz-utils: Node's own release tarballs are .tar.xz.

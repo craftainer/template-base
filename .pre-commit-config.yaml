@@ -60,7 +60,7 @@ repos:
 
       - id: scripts-tests
         name: scripts-tests (.github/scripts unit tests, executable bits)
-        entry: python3 -m unittest discover -s .github/scripts -p "test_*.py"
+        entry: env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/scripts -p "test_*.py"
         language: system
         files: ^(\.github/(scripts|workflows)/|\.claude/hooks/)
         pass_filenames: false

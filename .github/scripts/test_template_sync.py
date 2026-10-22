@@ -79,18 +79,18 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
 class DirectlyInvokedScriptsAreExecutableTest(unittest.TestCase):
     """A workflow step that names a script as the command needs mode 755 (exit 126 otherwise)."""
 
-    # A script path at the start of a shell command: line start, or after a
-    # `run:`/`runCmd:` key, `>-`/`|` aside. `bash x`, `python3 x` and
-    # `$(...)` contexts don't match because the path isn't first.
-    COMMAND_RE = re.compile(r"^\s*(?:(?:run|runCmd):\s*(?:[>|][-+]?\s*)?)?(\.github/scripts/[\w.-]+\.sh)\b")
+    # Any `.github/scripts/*.sh` mention in a non-comment line that isn't
+    # handed to an interpreter (`bash x`, `sh x`, `source x`, `. x`).
+    SCRIPT_RE = re.compile(r"(?<![\w.-])((?:\./)?\.github/scripts/[\w.-]+\.sh)\b")
+    INTERPRETED_RE = re.compile(r"(?:\b(?:bash|sh|source)|(?<!\S)\.)\s+(?:\./)?\.github/scripts/")
 
     def test_every_directly_invoked_script_is_executable(self) -> None:
         invoked: set[str] = set()
         for workflow in (REPO_ROOT / ".github" / "workflows").glob("*.yml"):
             for line in workflow.read_text().splitlines():
-                match = self.COMMAND_RE.match(line)
-                if match:
-                    invoked.add(match.group(1))
+                if line.lstrip().startswith("#") or self.INTERPRETED_RE.search(line):
+                    continue
+                invoked.update(m.removeprefix("./") for m in self.SCRIPT_RE.findall(line))
         self.assertTrue(invoked, "expected the moderate-* workflows to invoke scripts directly")
         for rel in sorted(invoked):
             self.assertTrue(is_exec(REPO_ROOT / rel), f"{rel} is not executable")

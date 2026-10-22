@@ -177,8 +177,13 @@ jobs:
   release:
     needs: [version, build, publish-packages]
     # A skipped `publish-packages` (no package opt-in) would skip this job
-    # too, so run whenever nothing failed or was cancelled.
-    if: ${{ !cancelled() && !failure() }}
+    # too, so require version and build to succeed and let only
+    # `publish-packages` be skipped.
+    if: >-
+      ${{ !cancelled()
+      && needs.version.result == 'success'
+      && needs.build.result == 'success'
+      && contains(fromJSON('["success","skipped"]'), needs.publish-packages.result) }}
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:

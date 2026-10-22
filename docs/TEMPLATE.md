@@ -148,7 +148,9 @@ writes an SBOM for what `build` produced; `release-assets` populates
 crates.io) once per release, never once per arch, and runs in a job that
 exists only for instances that set one of the `*_PUBLISH` variables, so
 an image-only instance never has `id-token: write` or a package secret
-(a no-op by default); `release-check` runs checks that need the
+(a no-op by default; it runs on a fresh runner with a checkout and the
+downloaded `dist/` only, so it uploads from `dist/` and sets up its own
+tooling); `release-check` runs checks that need the
 backing services (e.g. tests producing a coverage report); `finalize`
 does cross-arch work such as combining per-arch registry tags into one
 multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
