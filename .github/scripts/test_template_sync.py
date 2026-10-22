@@ -79,36 +79,108 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
         self.assertTrue(is_exec(self.instance / "s.sh"))
 
 
+_SCRIPT_PATH_RE = re.compile(r"(?<![\w.-])(\.github/scripts/[\w.-]+\.sh)\b")
+# What may sit between an interpreter and the script path: a `./` or a
+# `${{ ... }}/` prefix, quotes. Stripped from the text before the path.
+_PATH_PREFIX_RE = re.compile(r"""["']?(?:\$\{\{[^}]*\}\}/|\./)?["']?$""")
+# An interpreter (optionally by path, with flags) ending the text before a path.
+_INTERPRETER_RE = re.compile(r"(?:^|[\s;&|(])(?:\S*/)?(?:bash|sh|source|\.)(?:\s+-\S+)*\s+$")
+
+
+def directly_invoked_scripts(workflow_text: str) -> set[str]:
+    """`.github/scripts/*.sh` paths a workflow runs as the command itself.
+
+    Covers one-line and `run: |` block steps (every non-comment line is
+    checked), `./x.sh` and bare `x.sh`, and a `${{ ... }}/` prefix. A path
+    handed to `bash`/`sh`/`source`/`.` (with or without flags) is not direct:
+    those don't need the execute bit.
+    """
+    invoked: set[str] = set()
+    for line in workflow_text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        for m in _SCRIPT_PATH_RE.finditer(line):
+            before = _PATH_PREFIX_RE.sub("", line[: m.start()], count=1)
+            if not _INTERPRETER_RE.search(before):
+                invoked.add(m.group(1))
+    return invoked
+
+
 class DirectlyInvokedScriptsAreExecutableTest(unittest.TestCase):
     """A workflow step that names a script as the command needs mode 755 (exit 126 otherwise)."""
-
-    # Any `.github/scripts/*.sh` mention in a non-comment line that isn't
-    # handed to an interpreter (`bash x`, `sh x`, `source x`, `. x`).
-    SCRIPT_RE = re.compile(r"(?<![\w.-])((?:\./)?\.github/scripts/[\w.-]+\.sh)\b")
-    INTERPRETED_RE = re.compile(r"(?:\b(?:bash|sh|source)|(?<!\S)\.)\s+(?:\./)?\.github/scripts/[\w.-]+\.sh")
 
     def test_every_directly_invoked_script_is_executable(self) -> None:
         invoked: set[str] = set()
         for workflow in (REPO_ROOT / ".github" / "workflows").glob("*.yml"):
-            for line in workflow.read_text().splitlines():
-                if line.lstrip().startswith("#"):
-                    continue
-                interpreted = {m.group(0).split()[-1] for m in self.INTERPRETED_RE.finditer(line)}
-                invoked.update(
-                    m.removeprefix("./")
-                    for m in self.SCRIPT_RE.findall(line)
-                    if m not in interpreted
-                )
+            invoked |= directly_invoked_scripts(workflow.read_text())
         self.assertTrue(invoked, "expected the moderate-* workflows to invoke scripts directly")
         for rel in sorted(invoked):
             self.assertTrue(is_exec(REPO_ROOT / rel), f"{rel} is not executable")
+
+    def test_detection(self) -> None:
+        direct = {
+            "run: .github/scripts/a.sh": "a",
+            "run: ./.github/scripts/a.sh arg": "a",
+            "  run: |\n    set -e\n    .github/scripts/a.sh\n": "a",
+            "  run: |\n    echo hi && ./.github/scripts/a.sh": "a",
+            'run: "${{ github.workspace }}/.github/scripts/a.sh"': "a",
+            "run: ${{ github.workspace }}/.github/scripts/a.sh x": "a",
+            "run: bash .github/scripts/a.sh | .github/scripts/b.sh": "b",
+            "run: cd x; bash -e a.sh && ./.github/scripts/b.sh": "b",
+        }
+        for text, name in direct.items():
+            self.assertEqual(directly_invoked_scripts(text), {f".github/scripts/{name}.sh"}, text)
+        interpreted = [
+            "run: bash .github/scripts/a.sh",
+            "run: bash ./.github/scripts/a.sh",
+            "run: bash -eu .github/scripts/a.sh",
+            "run: /bin/bash ${{ github.workspace }}/.github/scripts/a.sh",
+            "  run: |\n    sh .github/scripts/a.sh",
+            "run: source .github/scripts/a.sh",
+            "run: . .github/scripts/a.sh",
+            "run: bash \"${{ github.workspace }}/.github/scripts/a.sh\"",
+            "# run: .github/scripts/a.sh",
+            "run: python .github/scripts/a.py",
+        ]
+        for text in interpreted:
+            self.assertEqual(directly_invoked_scripts(text), set(), text)
 
     def test_claude_hook_is_executable(self) -> None:
         # .claude/settings.json runs it directly as a hook command.
         self.assertTrue(is_exec(REPO_ROOT / ".claude" / "hooks" / "self-check.sh"))
 
 
+# An instance that implements `publish-packages` replaces base's default, so
+# DefaultPublishPackagesTest only describes (and can only test) a Makefile
+# that kept it.
+DEFAULT_PUBLISH_PACKAGES_MARKER = "doesn't implement publish-packages"
+
+
+def keeps_default_publish_packages(makefile_text: str) -> bool:
+    return DEFAULT_PUBLISH_PACKAGES_MARKER in makefile_text
+
+
+class KeepsDefaultPublishPackagesTest(unittest.TestCase):
+    def test_both_branches(self) -> None:
+        self.assertTrue(keeps_default_publish_packages(
+            'publish-packages:\n\t@echo "error: Makefile doesn\'t implement publish-packages" >&2\n'
+        ))
+        self.assertFalse(keeps_default_publish_packages("publish-packages:\n\tnpm publish\n"))
+
+    def test_this_repo_matches_the_skip(self) -> None:
+        # Guards the marker against drifting from the Makefile's message.
+        text = (REPO_ROOT / "Makefile").read_text()
+        self.assertEqual(
+            keeps_default_publish_packages(text),
+            "sets $$v but its Makefile doesn't implement publish-packages" in text,
+        )
+
+
 @unittest.skipUnless(shutil.which("make"), "make not installed")
+@unittest.skipUnless(
+    keeps_default_publish_packages((REPO_ROOT / "Makefile").read_text()),
+    "this Makefile implements publish-packages itself",
+)
 class DefaultPublishPackagesTest(unittest.TestCase):
     """base's default `publish-packages` fails loudly when a package publish is configured."""
 

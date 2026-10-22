@@ -1,7 +1,7 @@
 # scripts/post-create.d/
 
 Instance-owned hook: extra steps an instance runs when the devcontainer
-is created. This directory ships no scripts in base; a mid-layer template or an instance
+is created. Base ships none; mid-layer templates may. A mid-layer template or an instance
 adds `NN-name.sh` scripts here (see `docs/TEMPLATE.md`'s "Instance extension
 points"). A script a template ships is `replace` tier in its sync manifest, so
 a sync overwrites it; an instance's own script is listed in
