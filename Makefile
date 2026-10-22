@@ -28,8 +28,18 @@ publish:
 # Once, after every arch leg, and only when the instance sets PYPI_PUBLISH,
 # NPM_PUBLISH or CARGO_PUBLISH: PyPI / npm / crates.io. dist/ holds every
 # arch leg's files.
+# This default must not silently skip a configured publish: an instance that
+# sets a *_PUBLISH variable but still uploads from `publish` would otherwise
+# release without its package.
 publish-packages:
-	@echo "template-base ships no package -- nothing to publish."
+	@set -e; \
+	for v in PYPI_PUBLISH NPM_PUBLISH CARGO_PUBLISH; do \
+	  if [ -n "$$(printenv $$v)" ]; then \
+	    echo "error: this instance sets $$v but its Makefile doesn't implement publish-packages; move the package upload from publish into publish-packages (see docs/TEMPLATE.md)" >&2; \
+	    exit 1; \
+	  fi; \
+	done; \
+	echo "template-base ships no package -- nothing to publish."
 
 # Runs once after every arch leg, inside the devcontainer with the stack up.
 release-check:

@@ -148,7 +148,8 @@ writes an SBOM for what `build` produced; `release-assets` populates
 crates.io) once per release, never once per arch, and runs in a job that
 exists only for instances that set one of the `*_PUBLISH` variables, so
 an image-only instance never has `id-token: write` or a package secret
-(a no-op by default; it runs on a fresh runner with a checkout and the
+(base's default fails if any `*_PUBLISH` variable is set, so an instance
+can't silently skip it; with none set it is a no-op; it runs on a fresh runner with a checkout and the
 downloaded `dist/` only, so it uploads from `dist/` and sets up its own
 tooling); `release-check` runs checks that need the
 backing services (e.g. tests producing a coverage report); `finalize`
@@ -157,6 +158,17 @@ multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
 `1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
 embedding or tagging with the version. A single-arch no-op is the
 default: `release-arches` prints `["amd64"]`.
+
+**Upgrading a package instance.** Before this contract, `publish` also
+uploaded packages, once per arch. Now `publish` is image-only and gets no
+`*_PUBLISH` variables, secrets or OIDC token. An instance that publishes
+packages must move that upload from `publish` into a new
+`publish-packages` target (reading artifacts from `dist/`, setting up its
+own tooling). Until it does, base's default `publish-packages` (if the
+instance kept it) fails with a message naming the variable that is set;
+an instance whose Makefile has no such target fails with `make: No rule
+to make target`. Either way the release stops instead of skipping the
+upload.
 
 `dist/` rules: each arch leg's `dist/` is uploaded as artifact
 `release-assets-<arch>`, and the final job downloads all of them into one

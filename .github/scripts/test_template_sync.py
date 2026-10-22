@@ -7,8 +7,11 @@ Stdlib ``unittest`` only (see this directory's README); run with
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -103,6 +106,31 @@ class DirectlyInvokedScriptsAreExecutableTest(unittest.TestCase):
     def test_claude_hook_is_executable(self) -> None:
         # .claude/settings.json runs it directly as a hook command.
         self.assertTrue(is_exec(REPO_ROOT / ".claude" / "hooks" / "self-check.sh"))
+
+
+@unittest.skipUnless(shutil.which("make"), "make not installed")
+class DefaultPublishPackagesTest(unittest.TestCase):
+    """base's default `publish-packages` fails loudly when a package publish is configured."""
+
+    def run_target(self, **env: str) -> subprocess.CompletedProcess[str]:
+        clean = {k: v for k, v in os.environ.items() if not k.endswith("_PUBLISH")}
+        return subprocess.run(  # noqa: S603 -- fixed argv, trusted tool
+            ["make", "-s", "-C", str(REPO_ROOT), "publish-packages"],  # noqa: S607
+            env={**clean, **env},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_no_publish_variable_is_a_noop(self) -> None:
+        self.assertEqual(self.run_target().returncode, 0)
+        self.assertEqual(self.run_target(NPM_PUBLISH="").returncode, 0)
+
+    def test_any_publish_variable_fails_with_a_clear_message(self) -> None:
+        for var in ("PYPI_PUBLISH", "NPM_PUBLISH", "CARGO_PUBLISH"):
+            result = self.run_target(**{var: "1"})
+            self.assertNotEqual(result.returncode, 0, var)
+            self.assertIn(f"sets {var} but its Makefile doesn't implement publish-packages", result.stderr)
 
 
 if __name__ == "__main__":
