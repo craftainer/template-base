@@ -82,15 +82,20 @@ class DirectlyInvokedScriptsAreExecutableTest(unittest.TestCase):
     # Any `.github/scripts/*.sh` mention in a non-comment line that isn't
     # handed to an interpreter (`bash x`, `sh x`, `source x`, `. x`).
     SCRIPT_RE = re.compile(r"(?<![\w.-])((?:\./)?\.github/scripts/[\w.-]+\.sh)\b")
-    INTERPRETED_RE = re.compile(r"(?:\b(?:bash|sh|source)|(?<!\S)\.)\s+(?:\./)?\.github/scripts/")
+    INTERPRETED_RE = re.compile(r"(?:\b(?:bash|sh|source)|(?<!\S)\.)\s+(?:\./)?\.github/scripts/[\w.-]+\.sh")
 
     def test_every_directly_invoked_script_is_executable(self) -> None:
         invoked: set[str] = set()
         for workflow in (REPO_ROOT / ".github" / "workflows").glob("*.yml"):
             for line in workflow.read_text().splitlines():
-                if line.lstrip().startswith("#") or self.INTERPRETED_RE.search(line):
+                if line.lstrip().startswith("#"):
                     continue
-                invoked.update(m.removeprefix("./") for m in self.SCRIPT_RE.findall(line))
+                interpreted = {m.group(0).split()[-1] for m in self.INTERPRETED_RE.finditer(line)}
+                invoked.update(
+                    m.removeprefix("./")
+                    for m in self.SCRIPT_RE.findall(line)
+                    if m not in interpreted
+                )
         self.assertTrue(invoked, "expected the moderate-* workflows to invoke scripts directly")
         for rel in sorted(invoked):
             self.assertTrue(is_exec(REPO_ROOT / rel), f"{rel} is not executable")

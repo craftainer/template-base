@@ -72,6 +72,7 @@ retry() {
 installer_script=""
 trap 'rm -f "$installer_script"' EXIT
 download_installer() {
+    rm -f "$installer_script"
     installer_script="$(mktemp)"
     chmod a+r "$installer_script"
     fetch "$1" -o "$installer_script"
