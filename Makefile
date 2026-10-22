@@ -4,7 +4,7 @@
 # each target for its own artifact type (an OCI image, a package, a chart,
 # ...) without needing to touch release.yml.
 
-.PHONY: release-arches build sbom release-assets publish release-check finalize
+.PHONY: release-arches build sbom release-assets publish publish-packages release-check finalize
 
 # Prints (only) a JSON array of the arches to build on, once, first. Each
 # arch then runs build/sbom/release-assets/publish natively on its own runner.
@@ -20,8 +20,26 @@ sbom:
 release-assets:
 	@mkdir -p dist
 
+# Per arch: image registries only (a package must not be published here --
+# it would run once per arch; use publish-packages).
 publish:
 	@echo "template-base ships no artifact -- nothing to publish."
+
+# Once, after every arch leg, and only when the instance sets PYPI_PUBLISH,
+# NPM_PUBLISH or CARGO_PUBLISH: PyPI / npm / crates.io. dist/ holds every
+# arch leg's files.
+# This default must not silently skip a configured publish: an instance that
+# sets a *_PUBLISH variable but still uploads from `publish` would otherwise
+# release without its package.
+publish-packages:
+	@set -e; \
+	for v in PYPI_PUBLISH NPM_PUBLISH CARGO_PUBLISH; do \
+	  if [ -n "$$(printenv $$v)" ]; then \
+	    echo "error: this instance sets $$v but its Makefile doesn't implement publish-packages; move the package upload from publish into publish-packages (see docs/TEMPLATE.md)" >&2; \
+	    exit 1; \
+	  fi; \
+	done; \
+	echo "template-base ships no package -- nothing to publish."
 
 # Runs once after every arch leg, inside the devcontainer with the stack up.
 release-check:
