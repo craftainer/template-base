@@ -367,7 +367,11 @@ jobs:
           # An instance whose Makefile predates this target (not
           # template-owned, so a sync does not add it) has nothing to run:
           # warn instead of failing after the packages are already live.
-          if ! make -s -n verify-published > /dev/null 2>&1; then
+          # `make -q` never runs a recipe; exit 2 means "no rule" (or an
+          # unreadable Makefile), 0/1 mean the target exists.
+          rc=0
+          make -s -q verify-published > /dev/null 2>&1 || rc=$?
+          if [ "$rc" -eq 2 ]; then
             echo "::warning::this Makefile has no verify-published target; the published release was not verified"
             exit 0
           fi

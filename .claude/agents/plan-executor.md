@@ -101,8 +101,10 @@ is never yours to merge.
 1. Check the executor's diff against the write set and "Done when": every
    changed file inside the write set, `CHECKS` showing real output.
 2. Merge `wip/<ID>` into the repo's integration branch.
-3. Run the verification lane. On red, revert the merge and fix it
-   yourself if the fix is inside the item's write set. A lander can't
+3. Run the verification lane. On red, revert the merge. Fix it yourself
+   only if the fix is mechanical (a formatting or lint finding, a stale
+   generated file) and inside the item's write set, with one attempt;
+   anything that needs a judgment call escalates. A lander can't
    resume or message an executor (it has no `SendMessage` or agent
    spawning), so otherwise escalate with the failing output and the
    revert done; the orchestrator resumes the executor or briefs a fresh
