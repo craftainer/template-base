@@ -46,7 +46,7 @@ gh_version=$7
 #   their own downloads inside the script and so can't be wrapped by fetch.
 cleanup_paths=()
 cleanup() {
-    [ "${#cleanup_paths[@]}" -eq 0 ] || rm -rf "${cleanup_paths[@]}"
+    [ "${#cleanup_paths[@]}" -eq 0 ] || rm -rf "${cleanup_paths[@]}" || true
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
@@ -77,16 +77,19 @@ fetch() {
                 ;;
         esac
     fi
-    # curl's --retry covers timeouts and HTTP 408/429/5xx; connection-level
-    # failures (resolve/connect/reset/truncated transfer) are retried here,
-    # so a permanent HTTP error (-f, exit 22) still fails at once.
+    # curl's --retry (+ --retry-connrefused) covers timeouts, refused
+    # connections and HTTP 408/429/5xx; resets and truncated transfers
+    # (exit 18/52/55/56) are retried here, so a permanent HTTP error (-f,
+    # exit 22), DNS or TLS failure still fails at once. Callers must write
+    # to a file (-o): a re-run after a partial transfer would otherwise
+    # duplicate stdout.
     local attempt=1 status=0
     while :; do
         status=0
         curl -fsSL --retry 5 --retry-max-time 60 --retry-connrefused \
             ${auth[@]+"${auth[@]}"} "$@" "$url" || status=$?
         case "$status" in
-            6 | 7 | 18 | 28 | 35 | 52 | 55 | 56)
+            18 | 52 | 55 | 56)
                 if [ "$attempt" -lt 4 ]; then
                     echo "curl exit $status; retrying ($attempt/3): $url" >&2
                     sleep $((attempt * 2))
@@ -140,6 +143,8 @@ install_uv() {
         && sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh "$installer_script"
 }
 
+# An empty PREK_GITHUB_TOKEN is the same as unset to the installer (it tests
+# `[ -n "${AUTH_TOKEN:-}" ]`), so a local build sends no header.
 install_prek() {
     download_installer "https://github.com/j178/prek/releases/download/v${prek_version}/prek-installer.sh" \
         && PREK_GITHUB_TOKEN="${GITHUB_TOKEN:-}" sudo --preserve-env=PREK_GITHUB_TOKEN -u vscode \
