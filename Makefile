@@ -4,7 +4,7 @@
 # each target for its own artifact type (an OCI image, a package, a chart,
 # ...) without needing to touch release.yml.
 
-.PHONY: release-arches build sbom release-assets publish publish-packages release-check finalize
+.PHONY: release-arches build sbom release-assets publish publish-packages verify-published release-check finalize
 
 # Prints (only) a JSON array of the arches to build on, once, first. Each
 # arch then runs build/sbom/release-assets/publish natively on its own runner.
@@ -40,6 +40,13 @@ publish-packages:
 	  fi; \
 	done; \
 	echo "template-base ships no package -- nothing to publish."
+
+# Once, after publish-packages succeeded, and only when the instance sets
+# PYPI_PUBLISH, NPM_PUBLISH or CARGO_PUBLISH: check the published release
+# from the registry (e.g. install it). A no-op here on purpose: there is
+# nothing to verify unless an instance implements it.
+verify-published:
+	@echo "template-base ships no package -- nothing to verify."
 
 # Runs once after every arch leg, inside the devcontainer with the stack up.
 release-check:

@@ -135,9 +135,10 @@ unchanged across every instance), then drives these targets:
 |---|---|---|---|
 | `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
 | `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*`; no package-registry variables or secrets, and no OIDC token |
-| `publish-packages` | once, after all arches, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
-| `release-check` | once, after all arches | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH` |
-| `finalize` | once, after `release-check` | host runner | same as per-arch minus `RELEASE_ARCH` |
+| `release-check` | once, after all arches; gates everything after it | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY` |
+| `finalize` | once, after `release-check`; then the GitHub release is created | host runner | same as per-arch minus `RELEASE_ARCH` |
+| `publish-packages` | once, after the GitHub release exists, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
+| `verify-published` | once, after `publish-packages` succeeded, **only if** a `*_PUBLISH` variable is set | host runner (own job, no secrets, no OIDC token) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`; `dist/` as for `publish-packages` |
 
 What each target is for: `build` produces the release artifact(s) (an
 image, `cargo build --release`, `npm pack`, `helm package`, ...); `sbom`
@@ -151,8 +152,11 @@ an image-only instance never has `id-token: write` or a package secret
 (base's default fails if any `*_PUBLISH` variable is set, so an instance
 can't silently skip it; with none set it is a no-op; it runs on a fresh runner with a checkout and the
 downloaded `dist/` only, so it uploads from `dist/` and sets up its own
-tooling); `release-check` runs checks that need the
-backing services (e.g. tests producing a coverage report); `finalize`
+tooling); `verify-published` checks the release from the registry (e.g.
+installs the just-published package) and is a no-op in base's default, since
+there is nothing to verify unless an instance implements it;
+`release-check` runs checks that need the backing services (e.g. tests
+producing a coverage report) and the local artifact; `finalize`
 does cross-arch work such as combining per-arch registry tags into one
 multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
 `1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
@@ -170,6 +174,17 @@ an instance whose Makefile has no such target fails with `make: No rule
 to make target`. Either way the release stops instead of skipping the
 upload.
 
+**Job order.** `build` (per arch) → `release-check` → `release`
+(`finalize`, then the GitHub release) → `publish-packages` →
+`verify-published`. `release-check` gates both the release and publishing.
+The GitHub release exists before any registry upload, so a partial
+registry failure leaves the release in place and a re-run of the failed
+job finishes publishing (publishing needs to be re-runnable or skip what
+is already published). Package templates (npm, Python, Rust) move their
+registry check ("install what was just published") from `release-check` to
+`verify-published`; their `publish-packages` is unchanged. Base's
+`release-check` no longer receives the `*_PUBLISH` variables.
+
 **Package instance checklist.** An instance that publishes a package also:
 sets `repository`, homepage and bugs URLs in its package manifest
 (`package.json`, `pyproject.toml`, `Cargo.toml`) -- npm provenance
@@ -178,12 +193,18 @@ other registries show these links to users; and implements `publish-packages` it
 default (the `DefaultPublishPackagesTest` in `.github/scripts` skips itself
 once the default message is gone). `release-check` receives
 `GITHUB_REPOSITORY`, so an instance can run repository guards there.
+It also moves any "install what was just published" check from
+`release-check` to `verify-published` (see "Job order" above).
 
 `dist/` rules: each arch leg's `dist/` is uploaded as artifact
-`release-assets-<arch>`, and the final job downloads all of them into one
-`dist/`, so **per-arch file names must include the arch**. `release-check`
-and `finalize` may add more files to `dist/`. `release.yml` then runs
-`gh release create` with every file left in `dist/`.
+`release-assets-<arch>` (a tarball, so it is never empty), and
+`release-check`'s job assembles all of them into one `dist/`, failing if an
+arch's upload is missing or two legs produced the same file name, so
+**per-arch file names must include the arch**. `release-check` may add
+more files to `dist/`; the assembled `dist/` is handed to `release`,
+`publish-packages` and `verify-published`, and `finalize` may add more.
+`release.yml` then runs `gh release create` with every file left in
+`dist/`.
 
 The arch legs run natively, not under QEMU: `arm64` on `ubuntu-24.04-arm`,
 `amd64` on `ubuntu-24.04`, each overridable with the `CI_RUNNER_ARM64` /
