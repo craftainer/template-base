@@ -41,19 +41,21 @@ gh_version=$7
 #   and removed by one EXIT/INT/TERM trap, so a failed step (set -e), a
 #   failed checksum or a kill never leaves the bearer-token header file or
 #   a download directory behind.
-# - retry: reruns a whole step (an installer piped into sh) a bounded
-#   number of times with doubling delays, for installers that do their own
-#   downloads and so can't be wrapped by fetch.
+# - retry: reruns a whole step (download plus running an installer) a
+#   bounded number of times with doubling delays, for installers that do
+#   their own downloads inside the script and so can't be wrapped by fetch.
 cleanup_paths=()
 cleanup() {
     [ "${#cleanup_paths[@]}" -eq 0 ] || rm -rf "${cleanup_paths[@]}"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # tmp_path <mktemp args...>: creates the temp path into $tmp_result and
-# registers it for cleanup. (Not command substitution: that runs in a
-# subshell, so the registration would be lost.)
+# registers it for cleanup. Call it (and `fetch`, which uses it) in the
+# main shell only, never inside $(...), a pipeline or a background job: a
+# subshell's registration is lost.
 tmp_result=""
 tmp_path() {
     tmp_result="$(mktemp "$@")"
@@ -75,7 +77,30 @@ fetch() {
                 ;;
         esac
     fi
-    curl -fsSL --retry 5 --retry-max-time 60 ${auth[@]+"${auth[@]}"} "$@" "$url"
+    # curl's --retry covers timeouts and HTTP 408/429/5xx; connection-level
+    # failures (resolve/connect/reset/truncated transfer) are retried here,
+    # so a permanent HTTP error (-f, exit 22) still fails at once.
+    local attempt=1 status=0
+    while :; do
+        status=0
+        curl -fsSL --retry 5 --retry-max-time 60 --retry-connrefused \
+            ${auth[@]+"${auth[@]}"} "$@" "$url" || status=$?
+        case "$status" in
+            6 | 7 | 18 | 28 | 35 | 52 | 55 | 56)
+                if [ "$attempt" -lt 4 ]; then
+                    echo "curl exit $status; retrying ($attempt/3): $url" >&2
+                    sleep $((attempt * 2))
+                    attempt=$((attempt + 1))
+                    continue
+                fi
+                ;;
+        esac
+        break
+    done
+    # Remove the token header file as soon as it is unused; the trap is the
+    # backstop for a kill in between.
+    [ ${#auth[@]} -eq 0 ] || rm -f "${auth[1]#@}"
+    return "$status"
 }
 
 retry() {
@@ -106,7 +131,8 @@ download_installer() {
 }
 
 # The installers do their own downloads. prek's comes only from github.com,
-# so it gets the token (PREK_GITHUB_TOKEN). uv's tries releases.astral.sh
+# so it gets the token (PREK_GITHUB_TOKEN, passed through the environment
+# so it never appears in an argument list). uv's tries releases.astral.sh
 # first, a third-party host, so UV_GITHUB_TOKEN is deliberately not set; the
 # Claude installer downloads from claude.ai, not GitHub.
 install_uv() {
@@ -116,8 +142,8 @@ install_uv() {
 
 install_prek() {
     download_installer "https://github.com/j178/prek/releases/download/v${prek_version}/prek-installer.sh" \
-        && sudo -u vscode env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 \
-            ${GITHUB_TOKEN:+PREK_GITHUB_TOKEN="$GITHUB_TOKEN"} sh "$installer_script"
+        && PREK_GITHUB_TOKEN="${GITHUB_TOKEN:-}" sudo --preserve-env=PREK_GITHUB_TOKEN -u vscode \
+            env HOME=/home/vscode INSTALLER_NO_MODIFY_PATH=1 sh "$installer_script"
 }
 
 install_claude() {
