@@ -159,10 +159,12 @@ jobs:
           path: parts/
 
       - name: Assemble dist/
+        env:
+          ARCHES: ${{ needs.version.outputs.arches }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          for arch in $(echo '${{ needs.version.outputs.arches }}' | jq -r '.[]'); do
+          for arch in $(jq -r '.[]' <<< "$ARCHES"); do
             tarball="parts/release-assets-${arch}/assets.tar"
             if [ ! -f "$tarball" ]; then
               echo "::error::no release assets uploaded for arch ${arch}"
@@ -361,4 +363,12 @@ jobs:
           tar -C dist -xf "$RUNNER_TEMP/release-dist/dist.tar"
 
       - name: Verify published packages
-        run: make verify-published
+        run: |
+          # An instance whose Makefile predates this target (not
+          # template-owned, so a sync does not add it) has nothing to run:
+          # warn instead of failing after the packages are already live.
+          if ! make -s -n verify-published > /dev/null 2>&1; then
+            echo "::warning::this Makefile has no verify-published target; the published release was not verified"
+            exit 0
+          fi
+          make verify-published
