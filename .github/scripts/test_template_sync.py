@@ -50,8 +50,8 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
         return template_sync.apply_replace(self.old, self.new, self.instance, {path})
 
     def test_same_content_gains_executable_bit(self) -> None:
-        # The v1.8.0 bug: the template fixed 644 -> 755 with no content change.
         """Same content, template executable: the instance copy becomes executable."""
+        # Regression: a template fix of 644 -> 755 with no content change.
         write(self.old / "s.sh", b"#!/bin/sh\n", 0o644)
         write(self.new / "s.sh", b"#!/bin/sh\n", 0o755)
         write(self.instance / "s.sh", b"#!/bin/sh\n", 0o644)
@@ -165,8 +165,8 @@ class DirectlyInvokedScriptsAreExecutableTest(unittest.TestCase):
             self.assertEqual(directly_invoked_scripts(text), set(), text)
 
     def test_claude_hook_is_executable(self) -> None:
-        # .claude/settings.json runs it directly as a hook command.
         """The Claude hook script is executable."""
+        # .claude/settings.json runs it directly as a hook command.
         self.assertTrue(is_exec(REPO_ROOT / ".claude" / "hooks" / "self-check.sh"))
 
 
@@ -202,6 +202,16 @@ class KeepsDefaultPublishPackagesTest(unittest.TestCase):
                 "# we don't implement publish-packages yet\npublish-packages:\n\tnpm publish\n"
             )
         )
+
+
+class MakefileDefinesPublishPackagesTest(unittest.TestCase):
+    """Every instance defines `publish-packages` (base's default or its own)."""
+
+    def test_target_is_defined(self) -> None:
+        """A Makefile without the target fails the release with "No rule to make target"."""
+        makefile = REPO_ROOT / "Makefile"
+        self.assertTrue(makefile.is_file(), "no Makefile at the repository root")
+        self.assertRegex(makefile.read_text(), r"(?m)^publish-packages:")
 
 
 @unittest.skipUnless(shutil.which("make"), "make not installed")
