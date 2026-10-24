@@ -89,7 +89,6 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
         self.assertEqual(self.apply("s.sh")["updated"], ["s.sh"])
         self.assertTrue(is_exec(self.instance / "s.sh"))
 
-
     def test_symlinked_destination_is_not_chmodded_through(self) -> None:
         """A symlinked destination is left alone: chmod would change its target."""
         write(self.old / "s.sh", b"x\n", 0o644)
@@ -99,7 +98,6 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
         (self.instance / "s.sh").symlink_to(target)
         self.assertEqual(self.apply("s.sh"), {"updated": [], "removed": []})
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
-
 
     def test_symlinked_destination_is_not_overwritten_through(self) -> None:
         """Changed content never writes through a symlinked destination."""

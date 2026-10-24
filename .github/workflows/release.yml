@@ -3,13 +3,15 @@
 # "Release: a Makefile contract" section) and creates a GitHub release
 # with everything the instance's Makefile populated into dist/:
 # `release-arches` picks the arch matrix; `build`/`sbom`/`release-assets`/
-# `publish` (image registries) run once per arch on a native runner;
-# then, once each and in this order: `release-check` (inside the
-# devcontainer; gates everything after it), `finalize` + the GitHub release
-# (host), and only after the release exists `publish-packages`
-# (PyPI/npm/crates.io) and `verify-published`, both in jobs that exist only
-# for instances that opt in. So a partial registry failure never withholds
-# the GitHub release; a re-run of just the failed jobs finishes publishing.
+# `publish` (image registries) run once per arch on a native runner (image
+# `publish` runs inside `build`, so a pushed image is not gated by
+# `release-check`); then, once each and in this order: `release-check`
+# (inside the devcontainer; gates the GitHub release and package
+# publishing), `finalize` + the GitHub release (host), and only after the
+# release exists `publish-packages` (PyPI/npm/crates.io) and
+# `verify-published`, both in jobs that exist only for instances that opt in.
+# So a partial registry failure never withholds the GitHub release; a re-run
+# of just the failed jobs finishes publishing.
 name: Release
 
 on:
@@ -138,8 +140,9 @@ jobs:
           path: ${{ runner.temp }}/assets-${{ matrix.arch }}.tar
           if-no-files-found: error
 
-  # Validation gate: runs once after every arch leg, before anything is
-  # released or published. Assembles the per-arch `dist/`s (failing on a
+  # Validation gate: runs once after every arch leg, before the GitHub
+  # release and package publishing (not before the per-arch image `publish`
+  # in `build`). Assembles the per-arch `dist/`s (failing on a
   # missing arch or on a file name two legs both produced, which a plain
   # merge would silently overwrite), runs `make release-check` in the
   # devcontainer, and hands the assembled `dist/` (including anything
@@ -378,11 +381,19 @@ jobs:
           # An instance whose Makefile predates this target (not
           # template-owned, so a sync does not add it) has nothing to run:
           # warn instead of failing after the packages are already live.
-          # `make -q` never runs a recipe; exit 2 means "no rule" (or an
-          # unreadable Makefile), 0/1 mean the target exists.
+          # `make -pqRr` on a goal that does not exist dumps make's rule
+          # database without running any recipe (not even `$(MAKE)` lines).
+          # A Makefile that fails to parse (syntax error, missing include)
+          # never reaches the dump, so it fails the step; a parsed Makefile
+          # without a `verify-published` rule gets the warning.
           rc=0
-          make -s -q verify-published > /dev/null 2>&1 || rc=$?
-          if [ "$rc" -eq 2 ]; then
+          out=$(LC_ALL=C make -pqRr .verify-published-probe 2>&1) || rc=$?
+          if ! grep -q '^# Make data base' <<< "$out"; then
+            echo "$out"
+            exit "$((rc == 0 ? 1 : rc))"
+          fi
+          # `# Not a target:` marks a name that is only a prerequisite.
+          if ! awk '/^# Not a target:/ { nt = 1; next } /^verify-published::?/ && !nt { found = 1 } { nt = 0 } END { exit !found }' <<< "$out"; then
             echo "::warning::this Makefile has no verify-published target; the published release was not verified"
             exit 0
           fi
