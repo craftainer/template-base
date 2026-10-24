@@ -167,6 +167,8 @@ def tier_paths(root: Path, tiers: dict[str, list[str]], tier: str) -> set[str]:
     """Return every file under ``root`` classified into ``tier`` by the manifest."""
     candidates: set[str] = set()
     for pattern in tiers[tier]:
+        # Same glob test as template_sync_manifest.matches: only "*"/"?" make
+        # a pattern a glob; "[...]" counts only alongside one of them.
         if "*" in pattern or "?" in pattern:
             candidates.update(relative_files_matching(root, pattern))
             continue
