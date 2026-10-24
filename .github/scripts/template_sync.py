@@ -32,7 +32,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from template_sync_manifest import classify, parse_manifest
+from template_sync_manifest import classify, matches, parse_manifest
 
 TAG_RE = re.compile(
     r"^v(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
@@ -142,10 +142,32 @@ def relative_files_under(root: Path, rel_dir: str) -> list[str]:
     return [p.relative_to(root).as_posix() for p in base.rglob("*") if p.is_file()]
 
 
+def relative_files_matching(root: Path, pattern: str) -> list[str]:
+    """Return every regular file under ``root`` matching the glob ``pattern``.
+
+    Uses the manifest's own ``matches`` (``*`` spans ``/``), so what sync
+    expands is exactly what the completeness check classifies. ``.git`` is
+    skipped. A pattern that matches nothing yields an empty list.
+    """
+    if not root.is_dir():
+        return []
+    found = []
+    for p in root.rglob("*"):
+        rel = p.relative_to(root).as_posix()
+        if rel == ".git" or rel.startswith(".git/"):
+            continue
+        if p.is_file() and matches(rel, pattern):
+            found.append(rel)
+    return found
+
+
 def tier_paths(root: Path, tiers: dict[str, list[str]], tier: str) -> set[str]:
     """Return every file under ``root`` classified into ``tier`` by the manifest."""
     candidates: set[str] = set()
     for pattern in tiers[tier]:
+        if "*" in pattern or "?" in pattern:
+            candidates.update(relative_files_matching(root, pattern))
+            continue
         rel = pattern.rstrip("/") if pattern.endswith("/") else pattern
         candidates.update(relative_files_under(root, rel))
     return {path for path in candidates if classify(path, tiers) == [tier]}
@@ -158,6 +180,8 @@ def is_executable(path: Path) -> bool:
 
 def sync_executable_bit(src: Path, dst: Path) -> None:
     """Make ``dst``'s execute bits match ``src``'s, leaving its other bits alone."""
+    if dst.is_symlink():
+        return  # chmod would follow the link and change its target, not the link.
     mode = dst.stat().st_mode
     exec_bits = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
     if is_executable(src):
