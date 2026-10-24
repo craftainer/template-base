@@ -154,8 +154,8 @@ def relative_files_matching(root: Path, pattern: str) -> list[str]:
         return []
     found = []
     for dirpath, dirnames, filenames in os.walk(root):
-        if Path(dirpath) == root and ".git" in dirnames:
-            dirnames.remove(".git")  # don't descend into the object store
+        if ".git" in dirnames:
+            dirnames.remove(".git")  # don't descend into git metadata
         for name in filenames:
             rel = (Path(dirpath) / name).relative_to(root).as_posix()
             if (Path(dirpath) / name).is_file() and matches(rel, pattern):
@@ -204,11 +204,13 @@ def apply_replace(
     for path in sorted(new_paths):
         src = new_root / path
         dst = instance_root / path
+        if dst.is_symlink():
+            continue  # the instance deliberately links it; writing would follow the link.
         dst.parent.mkdir(parents=True, exist_ok=True)
         if not dst.exists() or dst.read_bytes() != src.read_bytes():
             shutil.copy2(src, dst)
             updated.append(path)
-        elif not dst.is_symlink() and is_executable(src) != is_executable(dst):
+        elif is_executable(src) != is_executable(dst):
             # Same content, different executable bit (e.g. a script the
             # template fixed from 644 to 755): a content-only comparison
             # would leave the instance's copy broken forever.

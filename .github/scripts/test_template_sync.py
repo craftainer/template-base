@@ -101,6 +101,17 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
 
 
+    def test_symlinked_destination_is_not_overwritten_through(self) -> None:
+        """Changed content never writes through a symlinked destination."""
+        write(self.old / "s.sh", b"a\n", 0o644)
+        write(self.new / "s.sh", b"b\n", 0o644)
+        target = self.instance / "target.sh"
+        write(target, b"a\n", 0o644)
+        (self.instance / "s.sh").symlink_to(target)
+        self.assertEqual(self.apply("s.sh"), {"updated": [], "removed": []})
+        self.assertEqual(target.read_bytes(), b"a\n")
+
+
 class TierPathsGlobTest(unittest.TestCase):
     """``template_sync.tier_paths`` expands glob entries in every tier."""
 
