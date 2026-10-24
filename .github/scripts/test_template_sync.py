@@ -97,7 +97,7 @@ class ApplyReplaceExecutableBitTest(unittest.TestCase):
         target = self.instance / "target.sh"
         write(target, b"x\n", 0o644)
         (self.instance / "s.sh").symlink_to(target)
-        self.apply("s.sh")
+        self.assertEqual(self.apply("s.sh"), {"updated": [], "removed": []})
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
 
 

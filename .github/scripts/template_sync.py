@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import stat
@@ -152,12 +153,13 @@ def relative_files_matching(root: Path, pattern: str) -> list[str]:
     if not root.is_dir():
         return []
     found = []
-    for p in root.rglob("*"):
-        rel = p.relative_to(root).as_posix()
-        if rel == ".git" or rel.startswith(".git/"):
-            continue
-        if p.is_file() and matches(rel, pattern):
-            found.append(rel)
+    for dirpath, dirnames, filenames in os.walk(root):
+        if Path(dirpath) == root and ".git" in dirnames:
+            dirnames.remove(".git")  # don't descend into the object store
+        for name in filenames:
+            rel = (Path(dirpath) / name).relative_to(root).as_posix()
+            if (Path(dirpath) / name).is_file() and matches(rel, pattern):
+                found.append(rel)
     return found
 
 
@@ -206,7 +208,7 @@ def apply_replace(
         if not dst.exists() or dst.read_bytes() != src.read_bytes():
             shutil.copy2(src, dst)
             updated.append(path)
-        elif is_executable(src) != is_executable(dst):
+        elif not dst.is_symlink() and is_executable(src) != is_executable(dst):
             # Same content, different executable bit (e.g. a script the
             # template fixed from 644 to 755): a content-only comparison
             # would leave the instance's copy broken forever.
