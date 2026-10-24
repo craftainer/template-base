@@ -123,17 +123,19 @@ jobs:
 
       # Packed into one tarball so the artifact is never empty (a leg that
       # produced nothing still uploads) and a missing upload is an error
-      # that `release-check`'s assembly step reports by arch.
+      # that `release-check`'s assembly step reports by arch. The file name
+      # carries the arch: `release-check` downloads with `merge-multiple`,
+      # which puts every leg's file in one directory.
       - name: Pack release assets
         run: |
           mkdir -p dist
-          tar -C dist -cf "$RUNNER_TEMP/assets.tar" .
+          tar -C dist -cf "$RUNNER_TEMP/assets-${{ matrix.arch }}.tar" .
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7.0.2
         with:
           name: release-assets-${{ matrix.arch }}
-          path: ${{ runner.temp }}/assets.tar
+          path: ${{ runner.temp }}/assets-${{ matrix.arch }}.tar
           if-no-files-found: error
 
   # Validation gate: runs once after every arch leg, before anything is
@@ -152,11 +154,16 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
 
+      # `merge-multiple` puts every leg's `assets-<arch>.tar` in `parts/`.
+      # Without it download-artifact extracts into `parts/<artifact name>/`
+      # only when several artifacts match; a single match (one arch) lands
+      # directly in `parts/`, so the layout would depend on the arch count.
       - name: Download per-arch release assets
         uses: actions/download-artifact@v8.0.2
         with:
           pattern: release-assets-*
           path: parts/
+          merge-multiple: true
 
       - name: Assemble dist/
         env:
@@ -165,7 +172,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           for arch in $(jq -r '.[]' <<< "$ARCHES"); do
-            tarball="parts/release-assets-${arch}/assets.tar"
+            tarball="parts/assets-${arch}.tar"
             if [ ! -f "$tarball" ]; then
               echo "::error::no release assets uploaded for arch ${arch}"
               exit 1
@@ -209,10 +216,14 @@ jobs:
       # down -- see checks.yml's identical step.
       - name: Tear down devcontainer stack
         if: always()
+        # COMPOSE_PROJECT_NAME is unset when an earlier step failed before
+        # "Set compose project name"; then no stack was started either.
         run: |
-          docker compose \
-            -p ${{ env.COMPOSE_PROJECT_NAME }} \
-            down --volumes --remove-orphans
+          if [ -z "${COMPOSE_PROJECT_NAME:-}" ]; then
+            echo "No compose project name set; nothing to tear down."
+            exit 0
+          fi
+          docker compose -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
 
       - name: Pack dist/
         run: tar -C dist -cf "$RUNNER_TEMP/dist.tar" .
