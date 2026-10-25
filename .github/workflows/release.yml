@@ -12,7 +12,9 @@
 # `verify-published`, both in jobs that exist only for instances that opt in.
 # So a partial registry failure never withholds the GitHub release; a re-run
 # of just the failed jobs finishes publishing (the `release` job skips an
-# existing release).
+# existing release). A GitHub release can therefore exist for a version whose
+# `publish-packages` failed: re-run the failed jobs to finish publishing, and
+# do not delete the release.
 name: Release
 
 on:

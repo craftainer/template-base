@@ -208,6 +208,9 @@ yet, re-run the job. An API answer without a commit sha is reported as such,
 not as an unresolvable tag. If `release` itself failed before the release
 existed, `finalize` runs again on the re-run, so an instance's `finalize`
 must be safe to repeat (it must not double-apply its side effects).
+Because the release is created before `publish-packages` runs, a GitHub
+release can exist for a version whose `publish-packages` failed. Re-run the
+failed jobs to finish publishing; do not delete the release.
 `verify-published` runs only after `publish-packages` succeeded, so after a
 partial `publish-packages` failure nothing is verified until the re-run of
 the failed jobs, which then runs it.
