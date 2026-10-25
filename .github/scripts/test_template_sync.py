@@ -232,7 +232,6 @@ class InstanceSkillTierTest(unittest.TestCase):
             ["replace", "ignore"],
         )
 
-
     def test_base_manifest_lists_skills_individually(self) -> None:
         """Base's manifest keeps every skill/agent separate, leaving room for an instance's."""
         replace = template_sync_manifest.parse_manifest(
