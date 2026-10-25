@@ -34,12 +34,23 @@
   tell whether the Makefile defines a target without running it (the
   `verify-published` probe; the name is matched literally, and a target only
   listed in `.PHONY` counts as defined since `make` runs it as a no-op).
-  `test_release_scripts.py` tests both; `scripts-tests` runs it. Keep
+  `assemble_dist.py` reads each tarball once and sets the staged `dist/`'s
+  mode only after extracting, so a `.` member cannot leave it unreadable to
+  another user. `has_make_target.sh` runs no recipe, but make still evaluates
+  `$(shell ...)` and `include` while parsing the Makefile.
+  `test_release_scripts.py` tests both, `verify_release_tag.sh`, and that
+  `../../scripts/develop.sh` never nests `fetch` inside `retry`;
+  `scripts-tests` runs it. Keep
   `assemble_dist.py` clean under `ruff check --select ALL` (bar `COM812` and
   `CPY001`), so instances that select `PL` etc. need no per-file ignores.
   `template_sync.py` and its test keep to a 100-column line length and name
   their magic numbers (`MAX_CONFLICTS`, `FIRST_WEEK_LAST_DAY`), so instances
   running ruff's `E501` and `PLR2004` need no ignores for them either.
+- `verify_release_tag.sh` — the `release` job's check that an already
+  published release's tag points at the commit the run built (fails closed;
+  retries only transient lookup errors, six attempts over about two
+  minutes, and never a missing tag). Tested against a fake `gh` in
+  `test_release_scripts.py`.
 - `find_moderation_result.sh` / `test_moderation_scripts.py` — the check
   step shared by `../workflows/moderate-bug-fix-apply.yml` and
   `../workflows/moderate-feature-build-apply.yml`: asks the API for the
