@@ -58,6 +58,19 @@
   `template_sync.py` and its test keep to a 100-column line length and name
   their magic numbers (`MAX_CONFLICTS`, `FIRST_WEEK_LAST_DAY`), so instances
   running ruff's `E501` and `PLR2004` need no ignores for them either.
+- `ruff.toml` / `test_script_syntax.py` — the workflows run these scripts
+  with the runner's system `python3` (3.12 on ubuntu-24.04, no
+  setup-python), but an instance's ruff takes `target-version` from its own
+  `pyproject.toml` (py314 in the Python templates) and would rewrite
+  `except (A, B):` to the 3.14-only PEP 758 form, a SyntaxError in CI.
+  Ruff uses the closest config file and does not merge parents, so
+  `ruff.toml` (replace tier, via this directory's manifest entry) pins
+  `target-version = "py312"`, the 100-column line length and ruff's default
+  lint rules for every file here, whatever the instance configures; this
+  supersedes the instance-level `select ALL` remarks above for these files.
+  `test_script_syntax.py` parses every script with
+  `ast.parse(feature_version=(3, 12))` and checks `ruff.toml` names the same
+  version. Bump both together if the runner's `python3` changes.
 - `verify_release_tag.sh` — the `release` job's check that an already
   published release's tag points at the commit the run built (fails closed;
   retries only transient lookup errors, six attempts over about two
