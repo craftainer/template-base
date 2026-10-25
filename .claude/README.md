@@ -45,6 +45,10 @@ this directory).
     verifying and releasing.
   - `owasp-scan` — a parallel OWASP Top Ten scan of `src/`.
 
+  Base lists each of these skills one by one in its sync manifest, so an
+  instance adds its own as `skills/<name>/` and lists that directory
+  under `ignore` in `.github/template-sync-manifest.local.yml`.
+
   `../CLAUDE.md` points at the two plan skills, so they're used even when
   a request doesn't match their descriptions word for word.
 - The `PreToolUse` hook on `Bash` runs `snip hook`, the

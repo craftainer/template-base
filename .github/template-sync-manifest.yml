@@ -31,8 +31,12 @@ replace:
   # docs/TEMPLATE.md's "Instance extension points") rather than by editing
   # them, so a sync can overwrite them safely.
   - .claude/hooks/self-check.sh
-  - .claude/skills/
-  - .claude/agents/
+  # Listed one by one, not as a glob: instances add their own skills and
+  # agents under ignore (.claude/skills/<name>/, .claude/agents/<name>.md).
+  - .claude/skills/owasp-scan/
+  - .claude/skills/plan-creation/
+  - .claude/skills/plan-execution/
+  - .claude/agents/plan-executor.md
   - .devcontainer/compose.yml
   - .devcontainer/devcontainer-lock.json
   - .devcontainer/resolve-ssh-agent.sh
