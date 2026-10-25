@@ -47,7 +47,10 @@ this directory).
 
   Base lists each of these skills one by one in its sync manifest, so an
   instance adds its own as `skills/<name>/` and lists that directory
-  under `ignore` in `.github/template-sync-manifest.local.yml`.
+  under `ignore` in `.github/template-sync-manifest.local.yml`. That
+  entry is what keeps the completeness check passing; sync never reads
+  the local file. Don't reuse a base (or removed base) skill or agent
+  name, since sync would overwrite or remove it.
 
   `../CLAUDE.md` points at the two plan skills, so they're used even when
   a request doesn't match their descriptions word for word.

@@ -242,6 +242,40 @@ class InstanceSkillTierTest(unittest.TestCase):
         for skill in sorted((REPO_ROOT / ".claude/skills").iterdir()):
             if skill.is_dir():
                 self.assertIn(f".claude/skills/{skill.name}/", replace)
+        for agent in sorted((REPO_ROOT / ".claude/agents").glob("*.md")):
+            self.assertIn(f".claude/agents/{agent.name}", replace)
+
+    def test_apply_removes_tombstoned_skill_and_spares_instance_skill(self) -> None:
+        """A deleted base skill's kept ``replace`` line lets sync remove it from instances."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old, new, instance = root / "old", root / "new", root / "instance"
+            files = {
+                old: {"gone": "old gone", "kept": "old kept"},
+                new: {"kept": "new kept"},
+                instance: {"gone": "old gone", "kept": "old kept", "mine": "mine"},
+            }
+            for base, skills in files.items():
+                for name, text in skills.items():
+                    f = base / ".claude/skills" / name / "SKILL.md"
+                    f.parent.mkdir(parents=True)
+                    f.write_text(text)
+            manifest = root / "manifest.yml"
+            manifest.write_text("replace:\n  - .claude/skills/gone/\n  - .claude/skills/kept/\n")
+            args = template_sync.build_parser().parse_args(
+                [
+                    "apply",
+                    "--manifest", str(manifest),
+                    "--old-ref", str(old),
+                    "--new-ref", str(new),
+                    "--instance-root", str(instance),
+                ]
+            )
+            self.assertEqual(args.func(args), 0)
+            skills = instance / ".claude/skills"
+            self.assertFalse((skills / "gone/SKILL.md").exists())
+            self.assertEqual((skills / "kept/SKILL.md").read_text(), "new kept")
+            self.assertEqual((skills / "mine/SKILL.md").read_text(), "mine")
 
 
 class ApplyMergeTest(unittest.TestCase):
