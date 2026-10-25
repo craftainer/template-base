@@ -350,8 +350,12 @@ def apply_merge(
 def cmd_apply(args: argparse.Namespace) -> int:
     """Apply the replace and merge tiers, printing a JSON summary to stdout.
 
-    Exit status: 0 clean, 1 merge conflicts (summary printed), 2 error (nothing
-    printed to stdout; the caller must fail and not advance the sync state).
+    Exit status: 0 clean, 1 merge conflicts (summary printed), 2 error (no
+    summary on stdout; the caller must fail and not advance the sync state).
+
+    Not atomic: files are written one by one, so on exit 2 the replace/merge
+    writes made before the error stay on disk. CI is safe because the runner's
+    checkout is discarded and the sync state does not advance.
     """
     try:
         tiers = parse_manifest(args.manifest.read_text())

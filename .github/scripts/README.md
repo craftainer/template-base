@@ -25,6 +25,10 @@
   did change is reported as a conflict and left as it is. It catches the broad `apply` failure with
   `logging.exception` rather than a `noqa`, so instances that don't
   select ruff's `BLE` rules see no unused-`noqa` finding.
+  `apply` is not atomic: on exit 2, files written before the error stay on
+  disk. CI is safe because the runner checkout is discarded and the sync
+  state does not advance. After a failed manual run, reset the working tree
+  with `git checkout -- .` and then `git clean -fd` (separate commands).
 - `test_template_sync.py` — stdlib `unittest` tests for
   `template_sync.py`'s replace and merge tiers (including the executable
   bit, re-running a merge, symlinked destinations, and `git merge-file`
