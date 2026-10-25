@@ -195,14 +195,22 @@ skips `finalize` and the release creation (a leftover draft is deleted and
 recreated), so re-running failed jobs after a later job failed does not
 fail on the existing release. It first checks that the existing
 release's tag points at the commit this run built, and fails (rather than
-warns) if the tag can't be resolved or points elsewhere. The tag lookup is
-tried up to three times, but only for a transient failure (HTTP 5xx or 429,
-or a network error). A tag that does not exist (the API answers 404, or 422
-"No commit found") or any other permanent error fails at once with a message
-saying so; re-running cannot help, so restore the tag or delete the release
-and run the workflow again. If `release` itself failed before the release
+warns) if the tag can't be resolved or points elsewhere
+(`.github/scripts/verify_release_tag.sh`). The tag lookup is tried up to six
+times over about two minutes (waits of 5, 10, 20, 40 and 60 seconds, enough
+for a minute-long secondary rate limit), but only for a transient failure
+(HTTP 5xx, 408 or 429, a rate limit, or a network error). A tag that does not
+resolve (the API answers 404, or 422 "No commit found") or any other permanent
+error fails at once. The 404 message names both causes: for a deleted tag,
+restore it or delete the release and run the workflow again; for a release
+that was only just created (say by a concurrent run) whose tag is not visible
+yet, re-run the job. An API answer without a commit sha is reported as such,
+not as an unresolvable tag. If `release` itself failed before the release
 existed, `finalize` runs again on the re-run, so an instance's `finalize`
 must be safe to repeat (it must not double-apply its side effects).
+Because the release is created before `publish-packages` runs, a GitHub
+release can exist for a version whose `publish-packages` failed. Re-run the
+failed jobs to finish publishing; do not delete the release.
 `verify-published` runs only after `publish-packages` succeeded, so after a
 partial `publish-packages` failure nothing is verified until the re-run of
 the failed jobs, which then runs it.
