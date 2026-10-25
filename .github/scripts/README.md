@@ -44,8 +44,10 @@
   step shared by `../workflows/moderate-bug-fix-apply.yml` and
   `../workflows/moderate-feature-build-apply.yml`: asks the API for the
   `moderation-result` artifact by name (so it is found however many
-  artifacts the run has), writes `found=true|false`, and logs a notice when
-  the artifact has expired. The tests run it against a fake `gh`.
+  artifacts the run has) and writes `found=true|false`. It fails on an
+  expired artifact (a produced result that can no longer be applied), an
+  API error, and an empty or unrecognised response. The tests run it
+  against a fake `gh`.
 - `run_claude.sh` — invokes `claude -p` for one issue-moderation stage
   inside the devcontainer; shared by all four Claude-invoking
   `../workflows/moderate-*.yml` jobs. See `../workflows/README.md`'s
