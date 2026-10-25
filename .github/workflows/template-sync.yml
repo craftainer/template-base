@@ -145,14 +145,16 @@ jobs:
             > /tmp/apply-summary.json
           rc=$?
           set -e
-          # Exit codes: 0 clean, 1 merge conflicts, 2 error. An error must
-          # fail the job here, before the sync state is advanced.
-          if [ "$rc" -gt 1 ]; then
-            echo "::error::template_sync.py apply failed (exit $rc); not advancing the sync state."
-            exit "$rc"
-          fi
-          echo "conflicts=$rc" >> "$GITHUB_OUTPUT"
           cat /tmp/apply-summary.json
+          # Exit codes: 0 clean, 1 merge conflicts, 2 error. A crash before
+          # apply's own error handler (an import-time SyntaxError) also exits
+          # 1, so check-apply trusts 0 or 1 only when the summary agrees. It
+          # fails the job here, before the sync state is advanced.
+          if ! python3 template_sync.py check-apply --exit-code "$rc" \
+              --summary /tmp/apply-summary.json >> "$GITHUB_OUTPUT"; then
+            echo "::error::template_sync.py apply failed (exit $rc); not advancing the sync state."
+            exit 1
+          fi
 
       - name: Update sync state
         if: inputs.initial_sync_tag == '' && steps.tags.outputs.skip != 'true' && steps.state.outputs.skip != 'true' && steps.cadence.outputs.skip != 'true'
