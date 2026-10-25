@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest import mock
 
 import template_sync
+import template_sync_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -199,6 +200,82 @@ class TierPathsGlobTest(unittest.TestCase):
         self.assertEqual(args.func(args), 0)
         self.assertTrue((instance / "scripts/release-a.sh").is_file())
         self.assertFalse((instance / "scripts/other.sh").exists())
+
+
+class InstanceSkillTierTest(unittest.TestCase):
+    """A per-skill ``replace`` entry leaves room for an instance's own skill."""
+
+    def test_base_and_instance_skills_each_match_one_tier(self) -> None:
+        """Base skill dirs match only replace, the instance's only ignore."""
+        tiers = {
+            "replace": [".claude/skills/base-skill/", ".claude/agents/base-agent.md"],
+            "ignore": [".claude/skills/own-skill/", ".claude/agents/own-agent.md"],
+            "merge": [".claude/README.md"],
+        }
+        expected = {
+            ".claude/skills/base-skill/SKILL.md": ["replace"],
+            ".claude/skills/base-skill/references/x.md": ["replace"],
+            ".claude/skills/own-skill/SKILL.md": ["ignore"],
+            ".claude/skills/own-skill/references/x.md": ["ignore"],
+            ".claude/agents/base-agent.md": ["replace"],
+            ".claude/agents/own-agent.md": ["ignore"],
+            ".claude/README.md": ["merge"],
+        }
+        for path, tier in expected.items():
+            self.assertEqual(template_sync_manifest.classify(path, tiers), tier, path)
+
+    def test_whole_directory_replace_overlaps_an_instance_skill(self) -> None:
+        """The old ``.claude/skills/`` entry is why this layout is needed."""
+        tiers = {"replace": [".claude/skills/"], "ignore": [".claude/skills/own-skill/"], "merge": []}
+        self.assertEqual(
+            template_sync_manifest.classify(".claude/skills/own-skill/SKILL.md", tiers),
+            ["replace", "ignore"],
+        )
+
+    def test_base_manifest_lists_skills_individually(self) -> None:
+        """Base's manifest keeps every skill/agent separate, leaving room for an instance's."""
+        replace = template_sync_manifest.parse_manifest(
+            (REPO_ROOT / ".github/template-sync-manifest.yml").read_text()
+        )["replace"]
+        self.assertNotIn(".claude/skills/", replace)
+        self.assertNotIn(".claude/agents/", replace)
+        for skill in sorted((REPO_ROOT / ".claude/skills").iterdir()):
+            if skill.is_dir():
+                self.assertIn(f".claude/skills/{skill.name}/", replace)
+        for agent in sorted((REPO_ROOT / ".claude/agents").glob("*.md")):
+            self.assertIn(f".claude/agents/{agent.name}", replace)
+
+    def test_apply_removes_tombstoned_skill_and_spares_instance_skill(self) -> None:
+        """A deleted base skill's kept ``replace`` line lets sync remove it from instances."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old, new, instance = root / "old", root / "new", root / "instance"
+            files = {
+                old: {"gone": "old gone", "kept": "old kept"},
+                new: {"kept": "new kept"},
+                instance: {"gone": "old gone", "kept": "old kept", "mine": "mine"},
+            }
+            for base, skills in files.items():
+                for name, text in skills.items():
+                    f = base / ".claude/skills" / name / "SKILL.md"
+                    f.parent.mkdir(parents=True)
+                    f.write_text(text)
+            manifest = root / "manifest.yml"
+            manifest.write_text("replace:\n  - .claude/skills/gone/\n  - .claude/skills/kept/\n")
+            args = template_sync.build_parser().parse_args(
+                [
+                    "apply",
+                    "--manifest", str(manifest),
+                    "--old-ref", str(old),
+                    "--new-ref", str(new),
+                    "--instance-root", str(instance),
+                ]
+            )
+            self.assertEqual(args.func(args), 0)
+            skills = instance / ".claude/skills"
+            self.assertFalse((skills / "gone/SKILL.md").exists())
+            self.assertEqual((skills / "kept/SKILL.md").read_text(), "new kept")
+            self.assertEqual((skills / "mine/SKILL.md").read_text(), "mine")
 
 
 class ApplyMergeTest(unittest.TestCase):
