@@ -18,13 +18,21 @@
   `../workflows/template-sync.yml`: picks the latest tag for a channel,
   applies the `replace`/`merge` tiers between two template checkouts and
   the instance working tree, and reads/writes
-  `../template-sync-state.json`.
+  `../template-sync-state.json`. Its `check-apply` subcommand cross-checks
+  `apply`'s exit status against the summary it wrote, so a crash that
+  exits 1 is not read as merge conflicts. A merge-tier file the instance
+  never changed takes the new version outright; a binary one the instance
+  did change is reported as a conflict and left as it is. It catches the broad `apply` failure with
+  `logging.exception` rather than a `noqa`, so instances that don't
+  select ruff's `BLE` rules see no unused-`noqa` finding.
 - `test_template_sync.py` — stdlib `unittest` tests for
   `template_sync.py`'s replace and merge tiers (including the executable
   bit, re-running a merge, symlinked destinations, and `git merge-file`
-  errors raising instead of counting as conflicts, and `apply`'s exit
-  codes: 0 clean, 1 conflicts, 2 error, including a missing or undecodable
-  manifest and a failing `tier_paths`), glob expansion of
+  errors raising instead of counting as conflicts, binary files counting
+  as conflicts, symlinked destinations kept on removal, one tree walk for
+  all globs, `apply`'s exit codes: 0 clean, 1 conflicts, 2 error,
+  including a missing or undecodable manifest and a failing `tier_paths`,
+  and `check-apply`), glob expansion of
   manifest entries, and a check that every script a workflow runs directly
   is executable; backs the `scripts-tests` prek hook.
 - `assemble_dist.py` / `has_make_target.sh` — helpers of

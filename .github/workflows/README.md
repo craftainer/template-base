@@ -45,9 +45,14 @@
   template's latest tagged release per the manifest's tiers and opens a
   PR — never a direct push, never auto-merged.
   `template_sync.py apply` exits 0 (clean), 1 (merge conflicts, still
-  opens the PR) or 2 (error, e.g. `git merge-file` failing on a binary
-  file, or an unreadable manifest): every failure other than conflicts
-  exits 2, and on 2 the job fails before the sync state advances.
+  opens the PR) or 2 (error, e.g. an unreadable manifest or `git
+  merge-file` failing): every failure other than conflicts exits 2. A
+  binary merge-tier file the instance changed cannot be merged, so it is
+  reported as a conflict and the instance's copy is left as it is. A crash before
+  `apply`'s own handler (an import-time `SyntaxError`) also exits 1, so
+  the job runs `template_sync.py check-apply`, which accepts a 0 or 1
+  only when the summary `apply` wrote agrees with it; anything else
+  fails the job before the sync state advances.
 
 Every workflow's `runs-on` defaults to `ubuntu-24.04` but can be
 overridden with the `CI_RUNNER` repository/organization variable —
