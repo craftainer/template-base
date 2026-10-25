@@ -131,8 +131,10 @@ which case no `moderation-result` artifact exists;
 workflows first look the artifact up by name through the run's artifacts API
 (`../scripts/find_moderation_result.sh`; the run's other artifacts are not
 listed, so more than 30 cannot hide it) and skip the download/apply steps
-when it is absent or expired (the latter logs a notice). The download itself stays
-strict, so real failures still fail the job.
+when it is absent. An expired artifact (the worker keeps it one day) fails
+the job: a result was produced and lost, so a green apply job would hide
+that nothing was applied. The download itself stays strict, so real
+failures still fail the job.
 
 Activating this in a given repo/fork takes two one-time steps, neither
 of which is itself a workflow: provisioning a dedicated Anthropic
