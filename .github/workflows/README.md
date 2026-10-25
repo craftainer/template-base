@@ -115,7 +115,13 @@ re-checks the issue's `*:*-ready` label before acting (a no-op, not an
 error, if it's already gone) since it isn't concurrency-grouped with the
 worker the way every other moderation workflow is -- `workflow_run`
 can't see the issue number to key a group on before the artifact is
-downloaded.
+downloaded. The triggering worker run also concludes `success` when its
+jobs were all skipped (unrelated comment, missing label, no API key), in
+which case no `moderation-result` artifact exists;
+`actions/download-artifact` has no "if not found" mode, so the apply
+workflows first look the artifact up through the run's artifacts API and
+skip the download/apply steps when it is absent. The download itself stays
+strict, so real failures still fail the job.
 
 Activating this in a given repo/fork takes two one-time steps, neither
 of which is itself a workflow: provisioning a dedicated Anthropic
