@@ -25,6 +25,7 @@ import template_sync
 import template_sync_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
 def is_exec(path: Path) -> bool:
@@ -645,6 +646,97 @@ class CheckApplyTest(unittest.TestCase):
         text = (REPO_ROOT / ".github/workflows/template-sync.yml").read_text()
         self.assertIn("template_sync.py check-apply", text)
         self.assertLess(text.index("check-apply"), text.index("name: Update sync state"))
+
+
+def _apply_step_script() -> str:
+    """Return the shell of the ``Apply replace and merge tiers`` step of template-sync.yml."""
+    text = (REPO_ROOT / ".github/workflows/template-sync.yml").read_text()
+    step = re.search(
+        r"- name: Apply replace and merge tiers\n.*?\n        run: \|\n(.*?)\n\n      - name:",
+        text,
+        re.DOTALL,
+    )
+    assert step is not None  # noqa: S101 -- test helper
+    return "\n".join(line[10:] for line in step.group(1).splitlines())
+
+
+class ApplyStepTest(unittest.TestCase):
+    """The workflow's apply step keeps ``apply``'s exit status and fails closed."""
+
+    FAKE = (
+        "import json, os, sys\n"
+        f"sys.path.insert(0, {str(SCRIPTS_DIR)!r})\n"
+        "if sys.argv[1] == 'apply':\n"
+        "    print(os.environ['FAKE_SUMMARY'])\n"
+        "    raise SystemExit(int(os.environ['FAKE_RC']))\n"
+        "import template_sync\n"
+        "raise SystemExit(template_sync.main())\n"
+    )
+
+    def run_step(self, rc: int, summary: str) -> tuple[subprocess.CompletedProcess[str], str]:
+        """Run the step with a fake ``apply``; return the process and ``$GITHUB_OUTPUT``."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scripts = root / "template-new/.github/scripts"
+            scripts.mkdir(parents=True)
+            (scripts / "template_sync.py").write_text(self.FAKE)
+            out = root / "output"
+            out.touch()
+            script = _apply_step_script().replace("/tmp/", f"{tmp}/")
+            result = subprocess.run(  # noqa: S603 -- fixed argv
+                ["bash", "-e", "-c", script],  # noqa: S607
+                env={
+                    **os.environ,
+                    "GITHUB_OUTPUT": str(out),
+                    "GITHUB_WORKSPACE": tmp,
+                    "FAKE_RC": str(rc),
+                    "FAKE_SUMMARY": summary,
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            return result, out.read_text()
+
+    CLEAN = json.dumps({"replace": {}, "merge": {"merged": [], "conflicts": []}})
+    CONFLICTS = json.dumps({"replace": {}, "merge": {"merged": [], "conflicts": ["a"]}})
+
+    def test_clean_and_conflicts_pass(self) -> None:
+        """Exit 0 and exit 1 with a matching summary pass and print the summary."""
+        for rc, summary, output in (
+            (0, self.CLEAN, "conflicts=0"),
+            (1, self.CONFLICTS, "conflicts=1"),
+        ):
+            result, out = self.run_step(rc, summary)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(out.strip(), output)
+            self.assertIn(summary, result.stdout)
+
+    def test_error_exit_is_preserved(self) -> None:
+        """An ``apply`` error (2) fails the job with 2, not 1, and names the status."""
+        result, out = self.run_step(2, self.CLEAN)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("exit 2", result.stdout + result.stderr)
+        self.assertEqual(out, "")
+
+    def test_other_statuses_are_preserved(self) -> None:
+        """A kill signal's status (137) is reported as such."""
+        result, _ = self.run_step(137, "")
+        self.assertEqual(result.returncode, 137, result.stderr)
+
+    def test_crash_exiting_1_fails_closed(self) -> None:
+        """Exit 1 without a conflict summary is a crash: the job fails, with an error status."""
+        result, out = self.run_step(1, "")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(out, "")
+
+    def test_summary_is_not_printed_as_valid_before_validation(self) -> None:
+        """A rejected summary is printed only under a "not validated" label."""
+        result, _ = self.run_step(2, self.CLEAN)
+        text = result.stdout
+        self.assertIn("not validated", text)
+        self.assertLess(text.index("not validated"), text.index(self.CLEAN))
 
 
 _SCRIPT_PATH_RE = re.compile(r"(?<![\w.-])(\.github/scripts/[\w.-]+\.sh)\b")

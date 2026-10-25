@@ -47,8 +47,12 @@
   `verify-published` probe; the name is matched literally, and a target only
   listed in `.PHONY` counts as defined since `make` runs it as a no-op).
   `assemble_dist.py` reads each tarball once and sets the staged `dist/`'s
-  mode only after extracting, so a `.` member cannot leave it unreadable to
-  another user. `has_make_target.sh` runs no recipe, but make still evaluates
+  mode to 0755 after extracting (`mkdtemp` creates it 0700), so the build's
+  `.` member cannot matter: the `data` extraction filter sets a directory's
+  mode to `None`, so no member restricts the staging directory mid-run (a test
+  pins this). A failed run, including a collision found in a later leg,
+  discards the staging directory and leaves `dist/` untouched.
+  `has_make_target.sh` runs no recipe, but make still evaluates
   `$(shell ...)` and `include` while parsing the Makefile.
   `test_release_scripts.py` tests both, `verify_release_tag.sh`, and that
   `../../scripts/develop.sh` never nests `fetch` inside `retry`;
@@ -74,7 +78,9 @@
 - `verify_release_tag.sh` — the `release` job's check that an already
   published release's tag points at the commit the run built (fails closed;
   retries only transient lookup errors, six attempts over about two
-  minutes, and never a missing tag). Tested against a fake `gh` in
+  minutes, and never a missing tag or a missing token, which it recognises by
+  `gh`'s own "set/populate the GH_TOKEN environment variable" message, not
+  by any stderr that names `GH_TOKEN`). Tested against a fake `gh` in
   `test_release_scripts.py`.
 - `find_moderation_result.sh` / `test_moderation_scripts.py` — the check
   step shared by `../workflows/moderate-bug-fix-apply.yml` and

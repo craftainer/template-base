@@ -184,6 +184,24 @@ class AssembleDistTest(unittest.TestCase):
         self.assertEqual(self.dist.stat().st_mode & 0o777, 0o755)
         self.assertTrue((self.dist / "a").is_file())
 
+    def test_restrictive_dot_member_in_an_earlier_leg_does_not_block_later_legs(self) -> None:
+        """A "." member with mode 0555 (applied after leg A) must not stop leg B writing."""
+        if os.geteuid() == 0:
+            self.skipTest("root ignores directory modes")
+        with tarfile.open(self.parts / "assets-amd64.tar", "w") as tar:
+            dot = tarfile.TarInfo(".")
+            dot.type = tarfile.DIRTYPE
+            dot.mode = 0o555
+            tar.addfile(dot)
+            info = tarfile.TarInfo("a")
+            info.size = 1
+            tar.addfile(info, io.BytesIO(b"1"))
+        self.leg("arm64", {"b": b"2"})
+        assemble_dist.assemble(["amd64", "arm64"], self.parts, self.dist)
+        self.assertEqual(self.dist.stat().st_mode & 0o777, 0o755)
+        self.assertTrue((self.dist / "a").is_file())
+        self.assertTrue((self.dist / "b").is_file())
+
     def test_each_tarball_is_opened_once(self) -> None:
         """Validation and extraction share one pass over every tarball."""
         self.leg("amd64", {"a": b"1"})
@@ -481,10 +499,31 @@ class VerifyReleaseTagTest(unittest.TestCase):
         self.assertEqual(self.run_script().returncode, 1)
         self.assertEqual(self.count(), 1)
         (self.tmp / "count").unlink()
-        self.calls("echo 'gh: To use GitHub CLI in a workflow, set GH_TOKEN' >&2; exit 4")
-        self.assertEqual(self.run_script().returncode, 1)
-        self.assertEqual(self.count(), 1)
+        # gh's own messages (cli/cli): automation, GitHub Actions and interactive.
+        for message in (
+            "gh: To use GitHub CLI in automation, set the GH_TOKEN environment variable.",
+            "gh: To use GitHub CLI in automation, set the GH_ENTERPRISE_TOKEN environment variable.",
+            "gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment "
+            "variable. Example:",
+            "To get started with GitHub CLI, please run:  gh auth login\n"
+            "Alternatively, populate the GH_TOKEN environment variable with a GitHub API "
+            "authentication token.",
+        ):
+            (self.tmp / "count").unlink(missing_ok=True)
+            self.calls(f"printf '%b\\n' '{message}' >&2; exit 4")
+            self.assertEqual(self.run_script().returncode, 1, message)
+            self.assertEqual(self.count(), 1, message)
         self.assertEqual(self.sleeps(), [])
+
+    def test_other_stderr_mentioning_gh_token_is_still_retried(self) -> None:
+        """Only gh's missing-token message is permanent; a 502 that names GH_TOKEN retries."""
+        self.calls(
+            "echo 'gh: Bad gateway (HTTP 502); GH_TOKEN was used' >&2; exit 1",
+            f"echo {SHA}",
+        )
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.count(), 2)
 
     def test_attempts_and_delay_are_configurable(self) -> None:
         """TAG_LOOKUP_ATTEMPTS and TAG_LOOKUP_DELAY override the defaults."""
@@ -512,6 +551,40 @@ class DevelopScriptRetryTest(unittest.TestCase):
             body = re.search(rf"^{name}\(\) \{{\n(.*?)^\}}", text, re.MULTILINE | re.DOTALL)
             self.assertIsNotNone(body, name)
             self.assertNotRegex(body.group(1), r"\b(fetch|download_installer)\b", name)  # type: ignore[union-attr]
+
+    def test_failed_installer_download_names_the_installer(self) -> None:
+        """A permanent download failure says which installer failed, and still aborts."""
+        text = (SCRIPTS.parents[1] / "scripts" / "develop.sh").read_text()
+        parts = []
+        for name in ("tmp_path", "fetch", "download_installer"):
+            body = re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", text, re.MULTILINE | re.DOTALL)
+            self.assertIsNotNone(body, name)
+            parts.append(body.group(0))  # type: ignore[union-attr]
+        with tempfile.TemporaryDirectory() as tmp:
+            curl = Path(tmp) / "curl"
+            curl.write_text("#!/usr/bin/env bash\necho 'curl: (22) 404' >&2\nexit 22\n")
+            curl.chmod(0o755)
+            script = (
+                'set -euo pipefail\ncleanup_paths=()\ntmp_result=""\ninstaller_script=""\n'
+                + "".join(parts)
+                + 'download_installer uv "https://example.invalid/uv-installer.sh"\n'
+                + "echo not-reached\n"
+            )
+            result = subprocess.run(  # noqa: S603 -- fixed argv
+                ["bash", "-c", script],  # noqa: S607
+                env={**os.environ, "PATH": f"{tmp}{os.pathsep}{os.environ['PATH']}"},
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        self.assertEqual(result.returncode, 22, result.stderr)
+        self.assertNotIn("not-reached", result.stdout)
+        self.assertIn("uv installer", result.stderr)
+        self.assertIn("https://example.invalid/uv-installer.sh", result.stderr)
+        self.assertIn("curl exit 22", result.stderr)
+        text_calls = re.findall(r"^download_installer (\S+) ", text, re.MULTILINE)
+        self.assertEqual(text_calls, ["uv", "prek", "claude"])
 
 
 if __name__ == "__main__":
