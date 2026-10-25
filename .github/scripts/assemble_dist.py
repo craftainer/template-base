@@ -162,9 +162,10 @@ def assemble(arches: list[str], parts: Path, dist: Path) -> None:
                         "files, directories and links that stay inside dist/"
                     )
                     raise AssembleError(msg) from exc
-        # After extracting: a "." member (`tar -C dist -cf x.tar .`) carries the
-        # build directory's mode and would otherwise leave dist/ unreadable to
-        # the other user the devcontainer runs as. mkdtemp creates 0700.
+        # mkdtemp creates 0700, and dist/ must be readable to the other user the
+        # devcontainer runs as. The "data" filter sets every directory's mode to
+        # None, so a "." member (`tar -C dist -cf x.tar .`) never restricts the
+        # stage while later legs extract into it; the chmod can wait until the end.
         stage.chmod(0o755)
         if dist.exists():
             dist.rmdir()

@@ -52,7 +52,10 @@
   `apply`'s own handler (an import-time `SyntaxError`) also exits 1, so
   the job runs `template_sync.py check-apply`, which accepts a 0 or 1
   only when the summary `apply` wrote agrees with it; anything else
-  fails the job before the sync state advances.
+  fails the job before the sync state advances. The job then exits with
+  `apply`'s own status when that is 2 or higher (so the log and the step's
+  exit code tell an error from conflicts) and the summary is printed as valid
+  only after that check.
 
 Every workflow's `runs-on` defaults to `ubuntu-24.04` but can be
 overridden with the `CI_RUNNER` repository/organization variable —

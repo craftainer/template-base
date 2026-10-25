@@ -41,8 +41,12 @@ for ((attempt = 1; attempt <= attempts; attempt++)); do
   fi
   tag_sha=
   cat "$err_file" >&2
-  # `gh` missing, or run without a token: retrying cannot fix either.
-  if [ "$status" -eq 127 ] || grep -q 'GH_TOKEN' "$err_file"; then
+  # `gh` missing, or run without a token: retrying cannot fix either. gh's
+  # own messages for the latter (cli/cli) are "set the GH_TOKEN environment
+  # variable" (automation, Actions) and "populate the GH_TOKEN environment
+  # variable" (interactive), or GH_ENTERPRISE_TOKEN on a GHES host; other
+  # stderr that merely names GH_TOKEN is not it.
+  if [ "$status" -eq 127 ] || grep -Eq '(set|populate) the GH_[A-Z_]*TOKEN environment variable' "$err_file"; then
     break
   fi
   # An error with an HTTP status that is not transient is permanent.
