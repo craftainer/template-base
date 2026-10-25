@@ -261,7 +261,11 @@ class InstanceSkillTierTest(unittest.TestCase):
 
     def test_whole_directory_replace_overlaps_an_instance_skill(self) -> None:
         """The old ``.claude/skills/`` entry is why this layout is needed."""
-        tiers = {"replace": [".claude/skills/"], "ignore": [".claude/skills/own-skill/"], "merge": []}
+        tiers = {
+            "replace": [".claude/skills/"],
+            "ignore": [".claude/skills/own-skill/"],
+            "merge": [],
+        }
         self.assertEqual(
             template_sync_manifest.classify(".claude/skills/own-skill/SKILL.md", tiers),
             ["replace", "ignore"],
@@ -323,9 +327,7 @@ class InstanceSkillTierTest(unittest.TestCase):
     def test_guard_skips_ignored_instance_skill_and_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.make_layout(
-                root, [".claude/skills/extra-skill/", ".claude/agents/extra-agent.md"]
-            )
+            self.make_layout(root, [".claude/skills/extra-skill/", ".claude/agents/extra-agent.md"])
             self.assertEqual(self.unlisted_skills_and_agents(root), [])
 
     def test_guard_catches_unlisted_skill(self) -> None:
@@ -338,7 +340,9 @@ class InstanceSkillTierTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_layout(root, [".claude/skills/extra-skill/"])
-            self.assertEqual(self.unlisted_skills_and_agents(root), [".claude/agents/extra-agent.md"])
+            self.assertEqual(
+                self.unlisted_skills_and_agents(root), [".claude/agents/extra-agent.md"]
+            )
 
     def test_apply_removes_tombstoned_skill_and_spares_instance_skill(self) -> None:
         """A deleted base skill's kept ``replace`` line lets sync remove it from instances."""
@@ -360,10 +364,14 @@ class InstanceSkillTierTest(unittest.TestCase):
             args = template_sync.build_parser().parse_args(
                 [
                     "apply",
-                    "--manifest", str(manifest),
-                    "--old-ref", str(old),
-                    "--new-ref", str(new),
-                    "--instance-root", str(instance),
+                    "--manifest",
+                    str(manifest),
+                    "--old-ref",
+                    str(old),
+                    "--new-ref",
+                    str(new),
+                    "--instance-root",
+                    str(instance),
                 ]
             )
             self.assertEqual(args.func(args), 0)
