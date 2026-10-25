@@ -183,14 +183,19 @@ another release for it.
 The GitHub release exists before any registry upload, so a partial
 registry failure leaves the release in place and a re-run of the failed
 job finishes publishing (publishing needs to be re-runnable or skip what
-is already published). The `release` job is re-runnable too: if the
-release already exists it skips `finalize` and the release creation (a
-leftover draft is deleted and recreated), so re-running failed jobs after a
-later job failed does not fail on the existing release. If `release` itself
-failed before the release existed, `finalize` runs again, so it should be
-safe to repeat. `verify-published` runs only after `publish-packages`
-succeeded, so a partial `publish-packages` failure is not verified until
-the re-run of the failed jobs, which then runs it. Package templates (npm, Python, Rust) move their
+is already published).
+
+The `release` job is re-runnable too: if the release already exists it
+skips `finalize` and the release creation (a leftover draft is deleted and
+recreated), so re-running failed jobs after a later job failed does not
+fail on the existing release. If `release` itself failed before the release
+existed, `finalize` runs again on the re-run, so an instance's `finalize`
+must be safe to repeat (it must not double-apply its side effects).
+`verify-published` runs only after `publish-packages` succeeded, so after a
+partial `publish-packages` failure nothing is verified until the re-run of
+the failed jobs, which then runs it.
+
+Package templates (npm, Python, Rust) move their
 registry check ("install what was just published") from `release-check` to
 `verify-published`; their `publish-packages` is unchanged. Base's
 `release-check` no longer receives the `*_PUBLISH` variables.

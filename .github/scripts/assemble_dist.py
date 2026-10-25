@@ -27,18 +27,18 @@ def _parents(path: PurePosixPath) -> list[PurePosixPath]:
     return [p for p in path.parents if str(p) != "."]
 
 
-def assemble(arches: list[str], parts: Path, dist: Path) -> None:
-    """Extract ``parts/assets-<arch>.tar`` for every arch into ``dist``."""
-    dist.mkdir(parents=True, exist_ok=True)
+def _check(arches: list[str], parts: Path) -> list[Path]:
+    """Validate every leg without extracting anything; return the tarballs in order."""
     leaves: dict[PurePosixPath, str] = {}  # non-directory entries -> arch
     dirs: dict[PurePosixPath, str] = {}  # directories (explicit or implied) -> arch
+    tarballs = []
     for arch in arches:
         tarball = parts / f"assets-{arch}.tar"
         if not tarball.is_file():
             raise AssembleError(f"no release assets uploaded for arch {arch}")
+        tarballs.append(tarball)
         with tarfile.open(tarball) as tar:
-            members = tar.getmembers()
-            for m in members:
+            for m in tar.getmembers():
                 path = PurePosixPath(m.name)
                 if str(path) == ".":
                     continue
@@ -48,7 +48,7 @@ def assemble(arches: list[str], parts: Path, dist: Path) -> None:
                 if m.isdir():
                     implied = [path, *implied]
                 for d in implied:
-                    if d in leaves:
+                    if d in leaves and leaves[d] != arch:
                         raise AssembleError(
                             f"dist/{d} is a file for arch {leaves[d]} but a directory for arch "
                             f"{arch}; per-arch file names must include the arch"
@@ -56,15 +56,28 @@ def assemble(arches: list[str], parts: Path, dist: Path) -> None:
                     dirs.setdefault(d, arch)
                 if m.isdir():
                     continue
-                if path in leaves or path in dirs:
-                    other = leaves.get(path) or dirs[path]
+                other = leaves.get(path) or dirs.get(path)
+                if other is not None and other != arch:
                     raise AssembleError(
                         f"dist/{path} is produced by more than one arch leg ({other} and {arch}); "
                         "per-arch file names must include the arch"
                     )
                 leaves[path] = arch
+    return tarballs
+
+
+def assemble(arches: list[str], parts: Path, dist: Path) -> None:
+    """Extract ``parts/assets-<arch>.tar`` for every arch into ``dist``.
+
+    Every leg is validated first, so a failure leaves ``dist`` untouched.
+    """
+    arches = list(dict.fromkeys(arches))
+    tarballs = _check(arches, parts)
+    dist.mkdir(parents=True, exist_ok=True)
+    for tarball in tarballs:
+        with tarfile.open(tarball) as tar:
             # Paths were checked above and the "data" filter refuses unsafe links.
-            tar.extractall(dist, members=members, filter="data")  # noqa: S202
+            tar.extractall(dist, filter="data")  # noqa: S202
 
 
 def main(argv: list[str]) -> int:
@@ -74,7 +87,7 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         assemble(json.loads(argv[1]), Path(argv[2]), Path(argv[3]))
-    except AssembleError as exc:
+    except (AssembleError, tarfile.TarError, json.JSONDecodeError, OSError) as exc:
         print(f"::error::{exc}")
         return 1
     return 0

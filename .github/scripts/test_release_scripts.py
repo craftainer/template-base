@@ -105,6 +105,33 @@ class AssembleDistTest(unittest.TestCase):
         self.leg("arm64", {"x": b"1"})
         self.assert_collision("more than one arch leg")
 
+    def test_same_leg_repeat_is_not_a_collision(self) -> None:
+        """A path repeated within one leg (or a repeated arch) extracts fine."""
+        self.leg("amd64", {"x": b"1"})
+        with tarfile.open(self.parts / "assets-amd64.tar", "a") as tar:
+            info = tarfile.TarInfo("x")
+            info.size = 1
+            tar.addfile(info, io.BytesIO(b"2"))
+        assemble_dist.assemble(["amd64", "amd64"], self.parts, self.dist)
+        self.assertTrue((self.dist / "x").is_file())
+
+    def test_failure_extracts_nothing(self) -> None:
+        """A collision in a later leg leaves dist/ empty."""
+        self.leg("amd64", {"a": b"1", "x": b"1"})
+        self.leg("arm64", {"x": b"2"})
+        self.assert_collision("more than one arch leg")
+        self.assertFalse(self.dist.exists() and any(self.dist.iterdir()))
+
+    def test_symlink_out_of_dist_is_reported(self) -> None:
+        """A link pointing outside dist/ is a reported error, not a traceback."""
+        self.leg("amd64", {}, links={"latest": "/etc/passwd"})
+        self.assertEqual(assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)]), 1)
+
+    def test_corrupt_tarball_is_reported(self) -> None:
+        """A tarball that is not a tar is a reported error."""
+        (self.parts / "assets-amd64.tar").write_bytes(b"not a tar")
+        self.assertEqual(assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)]), 1)
+
     def test_escaping_path(self) -> None:
         """A member that climbs out of dist/ is rejected."""
         self.leg("amd64", {"../evil": b"1"})
@@ -138,6 +165,8 @@ class HasMakeTargetTest(unittest.TestCase):
             "verify-published: other\nother:\n",
             "verify-published:\n",
             ".PHONY: verify-published\nverify-published: ;\n",
+            "verify-published: VAR := x\nverify-published:\n\t@true\n",
+            'verify-published:\n\t@echo "*** done ***"\n',
         ):
             self.assertEqual(self.probe(rule).returncode, 0, rule)
 
@@ -152,6 +181,7 @@ class HasMakeTargetTest(unittest.TestCase):
             "build:\n\t@true\n",
             "build: verify-published\n",
             "verify-published-extra:\n\t@true\n",
+            "verify-published: VAR := x\n",
         ):
             self.assertEqual(self.probe(text).returncode, 1, text)
 
