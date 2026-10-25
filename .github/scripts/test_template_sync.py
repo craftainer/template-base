@@ -232,18 +232,78 @@ class InstanceSkillTierTest(unittest.TestCase):
             ["replace", "ignore"],
         )
 
-    def test_base_manifest_lists_skills_individually(self) -> None:
-        """Base's manifest keeps every skill/agent separate, leaving room for an instance's."""
-        replace = template_sync_manifest.parse_manifest(
-            (REPO_ROOT / ".github/template-sync-manifest.yml").read_text()
-        )["replace"]
+    def unlisted_skills_and_agents(self, root: Path) -> list[str]:
+        """Return the skills/agents under ``root`` that are neither ignored nor listed in ``replace``.
+
+        Also asserts the manifest has no whole-directory ``.claude/skills/`` or
+        ``.claude/agents/`` entry. Anything the merged tiers (base manifest plus
+        an instance's local ``ignore`` file) classify as ``ignore`` is an
+        instance's own and is skipped.
+        """
+        manifest = root / ".github/template-sync-manifest.yml"
+        tiers, errors = template_sync_manifest.load_tiers(manifest)
+        self.assertEqual(errors, [])
+        replace = tiers["replace"]
         self.assertNotIn(".claude/skills/", replace)
         self.assertNotIn(".claude/agents/", replace)
-        for skill in sorted((REPO_ROOT / ".claude/skills").iterdir()):
-            if skill.is_dir():
-                self.assertIn(f".claude/skills/{skill.name}/", replace)
-        for agent in sorted((REPO_ROOT / ".claude/agents").glob("*.md")):
-            self.assertIn(f".claude/agents/{agent.name}", replace)
+        missing = []
+        for skill in sorted((root / ".claude/skills").iterdir()):
+            if not skill.is_dir():
+                continue
+            entry = f".claude/skills/{skill.name}/"
+            if "ignore" in template_sync_manifest.classify(f"{entry}SKILL.md", tiers):
+                continue
+            if entry not in replace:
+                missing.append(entry)
+        for agent in sorted((root / ".claude/agents").glob("*.md")):
+            entry = f".claude/agents/{agent.name}"
+            if "ignore" in template_sync_manifest.classify(entry, tiers):
+                continue
+            if entry not in replace:
+                missing.append(entry)
+        return missing
+
+    def test_base_manifest_lists_skills_individually(self) -> None:
+        """Base's manifest keeps every skill/agent separate, leaving room for an instance's."""
+        self.assertEqual(self.unlisted_skills_and_agents(REPO_ROOT), [])
+
+    def make_layout(self, root: Path, local_ignore: list[str]) -> None:
+        """Write a repo with one listed skill/agent and one unlisted skill/agent."""
+        (root / ".github").mkdir()
+        (root / ".github/template-sync-manifest.yml").write_text(
+            "replace:\n  - .claude/skills/base-skill/\n  - .claude/agents/base-agent.md\n"
+        )
+        if local_ignore:
+            lines = "".join(f"  - {entry}\n" for entry in local_ignore)
+            (root / ".github" / template_sync_manifest.LOCAL_MANIFEST_NAME).write_text(
+                f"ignore:\n{lines}"
+            )
+        for name in ("base-skill", "extra-skill"):
+            (root / ".claude/skills" / name).mkdir(parents=True)
+            (root / ".claude/skills" / name / "SKILL.md").write_text(name)
+        (root / ".claude/agents").mkdir(parents=True, exist_ok=True)
+        for name in ("base-agent", "extra-agent"):
+            (root / f".claude/agents/{name}.md").write_text(name)
+
+    def test_guard_skips_ignored_instance_skill_and_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_layout(
+                root, [".claude/skills/extra-skill/", ".claude/agents/extra-agent.md"]
+            )
+            self.assertEqual(self.unlisted_skills_and_agents(root), [])
+
+    def test_guard_catches_unlisted_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_layout(root, [".claude/agents/extra-agent.md"])
+            self.assertEqual(self.unlisted_skills_and_agents(root), [".claude/skills/extra-skill/"])
+
+    def test_guard_catches_unlisted_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_layout(root, [".claude/skills/extra-skill/"])
+            self.assertEqual(self.unlisted_skills_and_agents(root), [".claude/agents/extra-agent.md"])
 
     def test_apply_removes_tombstoned_skill_and_spares_instance_skill(self) -> None:
         """A deleted base skill's kept ``replace`` line lets sync remove it from instances."""
