@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import itertools
 import os
@@ -148,6 +149,40 @@ class AssembleDistTest(unittest.TestCase):
         """A tarball that is not a tar is a reported error."""
         (self.parts / "assets-amd64.tar").write_bytes(b"not a tar")
         self.assertEqual(assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)]), 1)
+
+    def test_truncated_compressed_tarball_names_the_file(self) -> None:
+        """A truncated gzip tarball is an ``::error::`` with its file name, not a traceback."""
+        # Regression: EOFError from the lazy read during extraction escaped main().
+        src = self.parts / "src"
+        src.mkdir()
+        (src / "f.txt").write_bytes(os.urandom(50_000).hex().encode())
+        full = self.parts / "full.tgz"
+        with tarfile.open(full, "w:gz") as tar:
+            tar.add(src / "f.txt", arcname="f.txt")
+        (self.parts / "assets-amd64.tar").write_bytes(full.read_bytes()[:300])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)])
+        self.assertEqual(status, 1)
+        self.assertIn("::error::could not read assets-amd64.tar", out.getvalue())
+        self.assertFalse(self.dist.exists())
+
+    def test_corrupt_bz2_tarball_names_the_file(self) -> None:
+        """bz2 corruption mid-stream is reported with the file name, whatever it raises."""
+        src = self.parts / "f.txt"
+        src.write_bytes(os.urandom(2_000_000).hex().encode())  # several bz2 blocks
+        full = self.parts / "full.tbz"
+        with tarfile.open(full, "w:bz2") as tar:
+            tar.add(src, arcname="f.txt")
+        data = bytearray(full.read_bytes())
+        data[-3000:-2980] = b"\xff" * 20
+        (self.parts / "assets-amd64.tar").write_bytes(bytes(data))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)])
+        self.assertEqual(status, 1)
+        # EOFError, OSError or ReadError, depending on where the damage lands.
+        self.assertRegex(out.getvalue(), r"^::error::.*assets-amd64\.tar")
 
     def test_invalid_arches_are_reported(self) -> None:
         """ARCHES_JSON must be a non-empty array of plain arch names."""
@@ -531,6 +566,42 @@ class VerifyReleaseTagTest(unittest.TestCase):
         self.run_script(TAG_LOOKUP_ATTEMPTS="3", TAG_LOOKUP_DELAY="1")
         self.assertEqual(self.count(), 3)
         self.assertEqual(self.sleeps(), [1, 2])
+
+    def test_invalid_knobs_fail_before_any_lookup(self) -> None:
+        """A non-numeric or zero attempt count, or a non-numeric delay, is rejected up front."""
+        self.calls(f"echo {SHA}")
+        for name, value in (
+            ("TAG_LOOKUP_ATTEMPTS", "0"),
+            ("TAG_LOOKUP_ATTEMPTS", "abc"),
+            ("TAG_LOOKUP_ATTEMPTS", "-1"),
+            ("TAG_LOOKUP_DELAY", "1.5"),
+            ("TAG_LOOKUP_DELAY", "x"),
+            ("TAG_LOOKUP_DELAY", "-3"),
+            ("TAG_LOOKUP_DELAY", "08"),
+            ("TAG_LOOKUP_ATTEMPTS", "100"),
+        ):
+            with self.subTest(name=name, value=value):
+                result = self.run_script(**{name: value})
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(f"::error::{name} must be", result.stderr)
+                self.assertFalse((self.tmp / "count").exists())
+
+    def test_zero_delay_is_allowed(self) -> None:
+        """A delay of 0 is valid (no wait between attempts)."""
+        self.calls(f"echo {SHA}")
+        self.assertEqual(self.run_script(TAG_LOOKUP_DELAY="0").returncode, 0)
+
+    def test_every_attempts_stderr_is_logged(self) -> None:
+        """Earlier attempts' errors stay in the log, labelled with their attempt."""
+        self.calls(
+            "echo 'gh: Bad Gateway (HTTP 502)' >&2; exit 1",
+            "echo 'error connecting to api.github.com' >&2; exit 1",
+            f"echo {SHA}",
+        )
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("attempt 1/6: gh: Bad Gateway (HTTP 502)", result.stderr)
+        self.assertIn("attempt 2/6: error connecting to api.github.com", result.stderr)
 
     def test_workflow_uses_the_script(self) -> None:
         """release.yml delegates to the script instead of an inline lookup."""

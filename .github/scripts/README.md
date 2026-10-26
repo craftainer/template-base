@@ -56,7 +56,9 @@
   `.` member cannot matter: the `data` extraction filter sets a directory's
   mode to `None`, so no member restricts the staging directory mid-run (a test
   pins this). A failed run, including a collision found in a later leg,
-  discards the staging directory and leaves `dist/` untouched.
+  discards the staging directory and leaves `dist/` untouched. A corrupt or
+  truncated tarball (including a cut-off compressed one) is an `::error::`
+  naming the file, not a traceback.
   `has_make_target.sh` runs no recipe, but make still evaluates
   `$(shell ...)` and `include` while parsing the Makefile.
   `test_release_scripts.py` tests both, `verify_release_tag.sh`, and that
@@ -85,14 +87,20 @@
   retries only transient lookup errors, six attempts over about two
   minutes, and never a missing tag or a missing token, which it recognises by
   `gh`'s own "set/populate the GH_TOKEN environment variable" message, not
-  by any stderr that names `GH_TOKEN`). Tested against a fake `gh` in
+  by any stderr that names `GH_TOKEN`). `TAG_LOOKUP_ATTEMPTS` (1-99) and `TAG_LOOKUP_DELAY` (0-9999, no leading zeros) are validated up
+  front, every attempt's stderr is logged labelled with its attempt number,
+  and a 404 is not retried even on a just-created tag: GitHub documents no
+  read-after-write lag for refs, so the error says to re-run once the tag is
+  visible. Tested against a fake `gh` in
   `test_release_scripts.py`.
 - `find_moderation_result.sh` / `test_moderation_scripts.py` — the check
   step shared by `../workflows/moderate-bug-fix-apply.yml` and
   `../workflows/moderate-feature-build-apply.yml`: asks the API for the
   `moderation-result` artifact by name (so it is found however many
   artifacts the run has) and writes `found=true|false`. It fails on an
-  expired artifact (a produced result that can no longer be applied), an
+  expired artifact (a produced result that can no longer be applied; the
+  message says to re-run the worker run, since re-running the apply run
+  cannot bring the artifact back), an
   API error, and an empty or unrecognised response. The tests run it
   against a fake `gh`.
 - `run_claude.sh` — invokes `claude -p` for one issue-moderation stage
