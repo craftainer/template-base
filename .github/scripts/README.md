@@ -74,7 +74,12 @@
   supersedes the instance-level `select ALL` remarks above for these files.
   `test_script_syntax.py` parses every script with
   `ast.parse(feature_version=(3, 12))` and checks `ruff.toml` names the same
-  version. Bump both together if the runner's `python3` changes.
+  version. The runner image's `python3` is not read at test time (that would
+  need the network), so `test_script_syntax.py` also maps each runner label
+  the workflows default to (`ubuntu-24.04`) to its Python: when Renovate bumps
+  that label the test fails until you look up the new image's `python3`
+  (actions/runner-images) and update `RUNNER_IMAGE_PYTHON`, `RUNNER_PYTHON` and
+  `ruff.toml` together.
 - `verify_release_tag.sh` — the `release` job's check that an already
   published release's tag points at the commit the run built (fails closed;
   retries only transient lookup errors, six attempts over about two
