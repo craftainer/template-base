@@ -21,8 +21,13 @@
   `../template-sync-state.json`. Its `check-apply` subcommand cross-checks
   `apply`'s exit status against the summary it wrote, so a crash that
   exits 1 is not read as merge conflicts. A merge-tier file the instance
-  never changed takes the new version outright; a binary one the instance
-  did change is reported as a conflict and left as it is. It catches the broad `apply` failure with
+  never changed takes the new version outright (content and executable bit,
+  keeping its other mode bits); a merged file keeps its own mode. A binary
+  one the instance did change is reported as a conflict and left as it is;
+  since it has no conflict markers, it is also listed in the summary's
+  `merge.binary`, labelled in the PR body and annotated with `::warning::` in
+  the job log. The workflow's apply step writes only `check-apply`'s validated
+  `conflicts=0|1` line to `$GITHUB_OUTPUT`. `apply` catches its broad failure with
   `logging.exception` rather than a `noqa`, so instances that don't
   select ruff's `BLE` rules see no unused-`noqa` finding.
   `apply` is not atomic: on exit 2, files written before the error stay on
