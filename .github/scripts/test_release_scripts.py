@@ -168,7 +168,7 @@ class AssembleDistTest(unittest.TestCase):
         self.assertFalse(self.dist.exists())
 
     def test_corrupt_bz2_tarball_names_the_file(self) -> None:
-        """bz2 corruption mid-stream (a bare OSError) is reported with the file name too."""
+        """bz2 corruption mid-stream is reported with the file name, whatever it raises."""
         src = self.parts / "f.txt"
         src.write_bytes(os.urandom(2_000_000).hex().encode())  # several bz2 blocks
         full = self.parts / "full.tbz"
@@ -181,7 +181,8 @@ class AssembleDistTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             status = assemble_dist.main(["x", '["amd64"]', str(self.parts), str(self.dist)])
         self.assertEqual(status, 1)
-        self.assertIn("::error::assets-amd64.tar:", out.getvalue())
+        # EOFError, OSError or ReadError, depending on where the damage lands.
+        self.assertRegex(out.getvalue(), r"^::error::.*assets-amd64\.tar")
 
     def test_invalid_arches_are_reported(self) -> None:
         """ARCHES_JSON must be a non-empty array of plain arch names."""
