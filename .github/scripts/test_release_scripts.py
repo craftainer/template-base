@@ -657,6 +657,69 @@ class DevelopScriptRetryTest(unittest.TestCase):
         text_calls = re.findall(r"^download_installer (\S+) ", text, re.MULTILINE)
         self.assertEqual(text_calls, ["uv", "prek", "claude"])
 
+    def run_download(self, curl_body: str) -> tuple[subprocess.CompletedProcess[str], int]:
+        """Run ``download_installer`` against a fake ``curl``; return the process and curl calls."""
+        text = (SCRIPTS.parents[1] / "scripts" / "develop.sh").read_text()
+        parts = []
+        for name in ("tmp_path", "fetch", "download_installer"):
+            body = re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", text, re.MULTILINE | re.DOTALL)
+            self.assertIsNotNone(body, name)
+            parts.append(body.group(0))  # type: ignore[union-attr]
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, body in (
+                ("curl", f'#!/usr/bin/env bash\necho x >> "{tmp}/calls"\n{curl_body}\n'),
+                ("sleep", "#!/usr/bin/env bash\nexit 0\n"),
+            ):
+                path = Path(tmp) / name
+                path.write_text(body)
+                path.chmod(0o755)
+            script = (
+                'set -euo pipefail\ncleanup_paths=()\ntmp_result=""\ninstaller_script=""\n'
+                + "".join(parts)
+                + 'download_installer uv "https://example.invalid/uv-installer.sh"\n'
+                + 'echo "installed: $(cat "$installer_script")"\n'
+            )
+            result = subprocess.run(  # noqa: S603 -- fixed argv
+                ["bash", "-c", script],  # noqa: S607
+                env={**os.environ, "PATH": f"{tmp}{os.pathsep}{os.environ['PATH']}"},
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            calls = (Path(tmp) / "calls").read_text().count("x")
+        return result, calls
+
+    def test_transient_curl_failures_are_retried_by_fetch(self) -> None:
+        """DNS (6) and connect (7) failures retry inside fetch, not abort."""
+        for status in (6, 7):
+            with self.subTest(status=status):
+                # Fail twice, then write the installer to the -o target.
+                body = (
+                    f'n=$(wc -l < "$(dirname "$0")/calls")\n'
+                    f"if [ $n -le 2 ]; then echo 'curl: ({status})' >&2; exit {status}; fi\n"
+                    'while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\n'
+                    'echo script > "$out"\n'
+                )
+                result, calls = self.run_download(body)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls, 3)
+                self.assertIn("installed: script", result.stdout)
+
+    def test_persistent_curl_failure_gives_up_after_bounded_retries(self) -> None:
+        """A DNS failure that never clears aborts after 4 tries, naming the installer."""
+        result, calls = self.run_download("exit 6")
+        self.assertEqual(result.returncode, 6, result.stderr)
+        self.assertEqual(calls, 4)
+        self.assertIn("uv installer", result.stderr)
+
+    def test_empty_installer_download_fails(self) -> None:
+        """A download that leaves an empty file fails instead of installing nothing."""
+        body = 'while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\n: > "$out"\n'
+        result, _ = self.run_download(body)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("installer is empty", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
