@@ -155,6 +155,17 @@ need the window reconnected, not a fresh image.
   not by Renovate: Renovate can't regenerate this file, so
   `../.github/renovate.json` turns its devcontainer feature updates
   off rather than let them merge with a stale lockfile.
+- Change `CLAUDE_CONFIG_DIR` (`compose.yml`'s `services.myapp`
+  `environment:`) and `claude-config`'s mount path together. The
+  variable points Claude Code at the volume for all its state. Without
+  it, Claude Code keeps `.claude.json` (account, MCP servers,
+  per-project trust) at `~/.claude.json`, outside the volume, so a
+  rebuild loses it and first-launch setup runs again. See Claude Code's
+  [dev container docs](https://code.claude.com/docs/en/devcontainer#persist-authentication-and-settings-across-rebuilds).
+  The variable, or a new mount path, takes effect only on a full
+  rebuild, and that first rebuild still starts without `.claude.json`.
+  To keep it, run `cp ~/.claude.json ~/.claude/.claude.json` (into the
+  volume) before rebuilding, or sign in once more afterwards.
 
 ## Don't
 
@@ -162,14 +173,7 @@ need the window reconnected, not a fresh image.
   else you don't want a host antivirus/DLP tool scanning or syncing — it
   lives purely in the container's writable layer instead. (`claude-config`
   and `gh-config` are deliberate, narrow exceptions — small login and
-  session state; see `compose.yml`'s comments on those volumes.
-  `compose.yml` also sets `CLAUDE_CONFIG_DIR` to `claude-config`'s mount
-  path, `/home/vscode/.claude`. Without it, Claude Code keeps
-  `.claude.json` (account, MCP servers, per-project trust) at
-  `~/.claude.json`, outside the volume, so a rebuild loses it and
-  first-launch setup runs again. Change the variable and the mount
-  together. See Claude Code's
-  [dev container docs](https://code.claude.com/docs/en/devcontainer#persist-authentication-and-settings-across-rebuilds).)
+  session state; see `compose.yml`'s comments on those volumes.)
 - Add a `ports:` mapping or a `networks:` block anywhere here.
 - Pin a feature or image version as `latest` — pin the exact version so
   Renovate can bump it deliberately.

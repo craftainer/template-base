@@ -48,9 +48,9 @@ services:
 volumes:
   # Persists Claude Code CLI session/credential state across container
   # rebuilds -- together with .claude.json, since services.myapp sets
-  # CLAUDE_CONFIG_DIR to this volume's mount path. A small amount of session-state data, not a language
-  # runtime's dependency tree, so the DLP/malware-scanning concern above
-  # doesn't apply the same way here.
+  # CLAUDE_CONFIG_DIR to this volume's mount path. A small amount of
+  # session-state data, not a language runtime's dependency tree, so the
+  # DLP/malware-scanning concern above doesn't apply the same way here.
   claude-config:
   # Persists the GitHub CLI's login (`gh auth login`) across rebuilds, for
   # the same reason.
