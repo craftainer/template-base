@@ -16,7 +16,8 @@
   It also declares the optional `github_token` build secret (from the
   `GITHUB_TOKEN` environment variable, which CI exports) that
   authenticates `../scripts/develop.sh`'s downloads; unset locally, it is
-  simply absent.
+  simply absent. Its `environment:` sets `CLAUDE_CONFIG_DIR` to the
+  `claude-config` volume's mount path (see "Do").
 - `compose.instance.yml` — instance-owned stub (`ignore` tier, never
   touched by sync): an instance's `include:` list and extra `services.myapp`
   settings. See `docs/TEMPLATE.md`'s "Instance extension points".
@@ -164,8 +165,9 @@ need the window reconnected, not a fresh image.
   [dev container docs](https://code.claude.com/docs/en/devcontainer#persist-authentication-and-settings-across-rebuilds).
   The variable, or a new mount path, takes effect only on a full
   rebuild, and that first rebuild still starts without `.claude.json`.
-  To keep it, run `cp ~/.claude.json ~/.claude/.claude.json` (into the
-  volume) before rebuilding, or sign in once more afterwards.
+  To keep it, quit Claude Code and run
+  `cp ~/.claude.json ~/.claude/.claude.json` (into the volume) as the
+  last step before rebuilding, or sign in once more afterwards.
 
 ## Don't
 
@@ -173,7 +175,8 @@ need the window reconnected, not a fresh image.
   else you don't want a host antivirus/DLP tool scanning or syncing — it
   lives purely in the container's writable layer instead. (`claude-config`
   and `gh-config` are deliberate, narrow exceptions — small login and
-  session state; see `compose.yml`'s comments on those volumes.)
+  session state, including Claude Code's `.claude.json`; see
+  `compose.yml`'s comments on those volumes.)
 - Add a `ports:` mapping or a `networks:` block anywhere here.
 - Pin a feature or image version as `latest` — pin the exact version so
   Renovate can bump it deliberately.
