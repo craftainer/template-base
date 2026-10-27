@@ -32,8 +32,8 @@ services:
       - gh-config:/home/vscode/.config/gh
     environment:
       # Keeps all Claude Code state, .claude.json included, in the
-      # claude-config volume. Must match its mount path above; see
-      # .devcontainer/README.md's "Do".
+      # claude-config volume. Must match its mount path above and the
+      # paths in scripts/develop.sh; see .devcontainer/README.md's "Do".
       # Set here rather than in devcontainer.json's remoteEnv so every
       # process in the container sees it, not just VS Code's.
       CLAUDE_CONFIG_DIR: /home/vscode/.claude

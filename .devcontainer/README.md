@@ -157,7 +157,10 @@ need the window reconnected, not a fresh image.
   `../.github/renovate.json` turns its devcontainer feature updates
   off rather than let them merge with a stale lockfile.
 - Change `CLAUDE_CONFIG_DIR` (`compose.yml`'s `services.myapp`
-  `environment:`) and `claude-config`'s mount path together. The
+  `environment:`), `claude-config`'s mount path and the
+  `/home/vscode/.claude` paths in `../scripts/develop.sh` together.
+  develop.sh creates that directory owned by `vscode` at mode 0700, so a
+  fresh volume starts out writable by Claude Code. The
   variable points Claude Code at the volume for all its state. Without
   it, Claude Code keeps `.claude.json` (account, MCP servers,
   per-project trust) at `~/.claude.json`, outside the volume, so a
