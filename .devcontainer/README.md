@@ -162,7 +162,14 @@ need the window reconnected, not a fresh image.
   else you don't want a host antivirus/DLP tool scanning or syncing — it
   lives purely in the container's writable layer instead. (`claude-config`
   and `gh-config` are deliberate, narrow exceptions — small login and
-  session state; see `compose.yml`'s comments on those volumes.)
+  session state; see `compose.yml`'s comments on those volumes.
+  `compose.yml` also sets `CLAUDE_CONFIG_DIR` to `claude-config`'s mount
+  path, `/home/vscode/.claude`. Without it, Claude Code keeps
+  `.claude.json` (account, MCP servers, per-project trust) at
+  `~/.claude.json`, outside the volume, so a rebuild loses it and
+  first-launch setup runs again. Change the variable and the mount
+  together. See Claude Code's
+  [dev container docs](https://code.claude.com/docs/en/devcontainer#persist-authentication-and-settings-across-rebuilds).)
 - Add a `ports:` mapping or a `networks:` block anywhere here.
 - Pin a feature or image version as `latest` — pin the exact version so
   Renovate can bump it deliberately.
