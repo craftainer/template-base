@@ -135,9 +135,9 @@ unchanged across every instance), then drives these targets:
 | Target | Runs | Where | Env available |
 |---|---|---|---|
 | `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
-| `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*`; no package-registry variables or secrets, and no OIDC token |
+| `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*` (`GITHUB_TOKEN` has `packages: write`); no package-registry variables or secrets, and no OIDC token |
 | `release-check` | once, after all arches; gates the GitHub release and `publish-packages` (not the per-arch image `publish`, which already ran in `build`) | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`; **not** `RELEASE_ARCH` (it runs once, not per arch) and no `ARCHES`: to check each arch's files in `dist/`, iterate over `make -s release-arches` |
-| `finalize` | once, after `release-check`; then the GitHub release is created | host runner | same as per-arch minus `RELEASE_ARCH` |
+| `finalize` | once, after `release-check`; then the GitHub release is created | host runner | same as per-arch minus `RELEASE_ARCH` (`GITHUB_TOKEN` also has `packages: write`) |
 | `publish-packages` | once, after the GitHub release exists, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
 | `verify-published` | once, after `publish-packages` succeeded, **only if** a `*_PUBLISH` variable is set | host runner (own job, no secrets, no OIDC token) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`; `dist/` as for `publish-packages` |
 
@@ -163,6 +163,23 @@ multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
 `1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
 embedding or tagging with the version. A single-arch no-op is the
 default: `release-arches` prints `["amd64"]`.
+
+**Registry credentials for `publish` and `finalize`.** The per-arch job's
+and the `release` job's `GITHUB_TOKEN` have `packages: write`, so an
+instance's `publish` and `finalize` (e.g. a multi-arch manifest list) may
+push to the repository's own GHCR packages (`ghcr.io/<owner>/<repo>...`) without
+`OCI_REGISTRY_USERNAME`/`OCI_REGISTRY_PASSWORD`: log in with username
+`GITHUB_ACTOR` and password `GITHUB_TOKEN`. A package that the workflow
+creates inherits the repository's permissions. A package that already
+exists and isn't linked to the repository first needs the repository added
+under the package's "Manage Actions access" settings, with write access.
+The explicit secrets remain the way to reach any other registry, or a
+package outside that repository's reach, and an instance that sets them
+should prefer them. Base's own `publish` and `finalize` are no-ops and log
+in nowhere, so each instance implements this fallback in its own
+`Makefile`. Trade-off: the token is in the job env, so every per-arch
+target (`build`, `sbom`, `release-assets`), not only `publish`, can write
+those packages.
 
 **Upgrading a package instance.** Before this contract, `publish` also
 uploaded packages, once per arch. Now `publish` is image-only and gets no

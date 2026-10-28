@@ -256,9 +256,15 @@ workflow works with no registry configured at all. When it is set:
 - `OCI_IMAGE_NAME` (variable, optional) — the image path within the
   registry, e.g. `myorg/template-fastapi`. Defaults to the repository's
   own `owner/repo` (lowercased) if unset.
-- `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets,
-  required whenever `OCI_REGISTRY` is set) — credentials for
-  `docker/login-action`.
+- `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets) —
+  credentials for `docker/login-action`. Required whenever
+  `OCI_REGISTRY` is set, except to push to the repository's own GHCR
+  packages (`ghcr.io/<owner>/<repo>...`): the `build` and `release`
+  jobs' `GITHUB_TOKEN` has `packages: write`, so the instance's
+  `publish` and `finalize` can log in with `GITHUB_ACTOR`/`GITHUB_TOKEN` instead (see
+  `../../docs/TEMPLATE.md`'s "Release: a Makefile contract"). The
+  contract asks an instance's `publish` to prefer the secrets when they
+  are set; they remain the way to reach any other registry.
 
 ## Image labels
 
@@ -286,7 +292,10 @@ cleanly when the registry isn't configured.
 - `OCI_REGISTRY` (variable) — registry host (e.g. `ghcr.io`).
 - `OCI_IMAGE_NAME` (variable, optional) — image path within the registry.
 - `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets) —
-  registry credentials.
+  registry credentials. Optional for the repository's own GHCR
+  packages, which the `build` and `release` jobs' `GITHUB_TOKEN`
+  (`packages: write`, actor `GITHUB_ACTOR`) can push to from `publish`
+  and `finalize`.
 - `CI_RUNNER_AMD64` / `CI_RUNNER_ARM64` (variables, optional) — runner
   labels for each arch leg, defaulting to `ubuntu-24.04` /
   `ubuntu-24.04-arm`.
@@ -311,9 +320,13 @@ cleanly when the registry isn't configured.
 
 ## Do
 
-- Give `release.yml` and `template-sync.yml` `contents: write` and
-  nothing broader (`template-sync.yml` also needs `pull-requests:
-  write`, for nothing else); leave `checks.yml` at `contents: read`.
+- Give `release.yml` and `template-sync.yml` `contents: write`, with
+  exactly two additions and nothing else broader: `template-sync.yml`
+  also needs `pull-requests: write`, and `release.yml`'s `build` and
+  `release` jobs also have `packages: write`, so `make publish` and
+  `make finalize` can push to the repository's own GHCR packages with
+  `GITHUB_TOKEN` (no other job has it; the token is in `build`'s job
+  env, so every per-arch target can use it). Leave `checks.yml` at `contents: read`.
 - Keep `id-token: write` on `release.yml`'s `publish-packages` job only
   (PyPI, npm and crates.io trusted publishing via GitHub OIDC). GitHub
   permissions are per job, not per step, and that job's `if:` on the

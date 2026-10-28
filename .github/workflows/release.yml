@@ -80,10 +80,15 @@ jobs:
         arch: ${{ fromJSON(needs.version.outputs.arches) }}
     # Deliberately no `id-token: write` and no package-registry secrets
     # here: this job runs for every instance, once per arch, and image
-    # publishing needs neither. Package publishing is the separate
-    # `publish-packages` job below.
+    # publishing needs neither. Package publishing (PyPI, npm, crates.io)
+    # is the separate `publish-packages` job below. `packages: write` lets
+    # `make publish` push to this repository's own GHCR packages
+    # (ghcr.io/<owner>/<repo>...) with `GITHUB_TOKEN` (actor
+    # `GITHUB_ACTOR`) when the OCI_REGISTRY_* secrets are unset. The
+    # `release` job has it too, for `make finalize`'s manifest lists.
     permissions:
       contents: write
+      packages: write
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ matrix.arch == 'arm64' && (vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm') || (vars.CI_RUNNER_AMD64 || 'ubuntu-24.04') }}
     env:
@@ -248,6 +253,12 @@ jobs:
     concurrency:
       group: release-${{ needs.version.outputs.tag }}
       cancel-in-progress: false
+    # `packages: write` lets `make finalize` combine per-arch tags into a
+    # multi-arch manifest list in this repository's own GHCR packages with
+    # `GITHUB_TOKEN`, as `build`'s `make publish` pushes them.
+    permissions:
+      contents: write
+      packages: write
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
