@@ -262,8 +262,9 @@ workflow works with no registry configured at all. When it is set:
   packages (`ghcr.io/<owner>/<repo>...`): the `build` job's
   `GITHUB_TOKEN` has `packages: write`, so the instance's `publish` can
   log in with `GITHUB_ACTOR`/`GITHUB_TOKEN` instead (see
-  `../../docs/TEMPLATE.md`'s "Release: a Makefile contract"). Set
-  secrets win, and they remain the way to reach any other registry.
+  `../../docs/TEMPLATE.md`'s "Release: a Makefile contract"). The
+  contract asks an instance's `publish` to prefer the secrets when they
+  are set; they remain the way to reach any other registry.
 
 ## Image labels
 
@@ -318,12 +319,12 @@ cleanly when the registry isn't configured.
 
 ## Do
 
-- Give `release.yml` and `template-sync.yml` `contents: write` and
-  nothing broader (`template-sync.yml` also needs `pull-requests:
-  write`, for nothing else; `release.yml`'s `build` job also has
-  `packages: write`, so `make publish` can push to the repository's own
-  GHCR packages with `GITHUB_TOKEN`, and no other job does); leave
-  `checks.yml` at `contents: read`.
+- Give `release.yml` and `template-sync.yml` `contents: write`, with
+  exactly two additions and nothing else broader: `template-sync.yml`
+  also needs `pull-requests: write`, and `release.yml`'s `build` job
+  also has `packages: write`, so `make publish` can push to the
+  repository's own GHCR packages with `GITHUB_TOKEN` (no other job has
+  it). Leave `checks.yml` at `contents: read`.
 - Keep `id-token: write` on `release.yml`'s `publish-packages` job only
   (PyPI, npm and crates.io trusted publishing via GitHub OIDC). GitHub
   permissions are per job, not per step, and that job's `if:` on the

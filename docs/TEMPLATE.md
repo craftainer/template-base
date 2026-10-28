@@ -159,7 +159,10 @@ there is nothing to verify unless an instance implements it;
 `release-check` runs checks that need the backing services (e.g. tests
 producing a coverage report) and the local artifact; `finalize`
 does cross-arch work such as combining per-arch registry tags into one
-multi-arch manifest list.
+multi-arch manifest list. `RELEASE_VERSION` (e.g. `1.2.3` or
+`1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
+embedding or tagging with the version. A single-arch no-op is the
+default: `release-arches` prints `["amd64"]`.
 
 **Registry credentials for `publish`.** The per-arch job's `GITHUB_TOKEN`
 has `packages: write`, so an instance's `publish` may push to the
@@ -173,11 +176,6 @@ The explicit secrets remain the way to reach any other registry, or a
 package outside that repository's reach, and an instance that sets them
 should prefer them. Base's own `publish` is a no-op and logs in nowhere,
 so each instance implements this fallback in its own `Makefile`.
-
-`RELEASE_VERSION` (e.g. `1.2.3` or
-`1.2.3-alpha.1`) and `RELEASE_TAG` (the same, `v`-prefixed) are for
-embedding or tagging with the version. A single-arch no-op is the
-default: `release-arches` prints `["amd64"]`.
 
 **Upgrading a package instance.** Before this contract, `publish` also
 uploaded packages, once per arch. Now `publish` is image-only and gets no
