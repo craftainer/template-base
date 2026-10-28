@@ -256,9 +256,14 @@ workflow works with no registry configured at all. When it is set:
 - `OCI_IMAGE_NAME` (variable, optional) — the image path within the
   registry, e.g. `myorg/template-fastapi`. Defaults to the repository's
   own `owner/repo` (lowercased) if unset.
-- `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets,
-  required whenever `OCI_REGISTRY` is set) — credentials for
-  `docker/login-action`.
+- `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets) —
+  credentials for `docker/login-action`. Required whenever
+  `OCI_REGISTRY` is set, except to push to the repository's own GHCR
+  packages (`ghcr.io/<owner>/<repo>...`): the `build` job's
+  `GITHUB_TOKEN` has `packages: write`, so the instance's `publish` can
+  log in with `GITHUB_ACTOR`/`GITHUB_TOKEN` instead (see
+  `../../docs/TEMPLATE.md`'s "Release: a Makefile contract"). Set
+  secrets win, and they remain the way to reach any other registry.
 
 ## Image labels
 
@@ -286,7 +291,9 @@ cleanly when the registry isn't configured.
 - `OCI_REGISTRY` (variable) — registry host (e.g. `ghcr.io`).
 - `OCI_IMAGE_NAME` (variable, optional) — image path within the registry.
 - `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_PASSWORD` (secrets) —
-  registry credentials.
+  registry credentials. Optional for the repository's own GHCR
+  packages, which the `build` job's `GITHUB_TOKEN` (`packages: write`,
+  actor `GITHUB_ACTOR`) can push to.
 - `CI_RUNNER_AMD64` / `CI_RUNNER_ARM64` (variables, optional) — runner
   labels for each arch leg, defaulting to `ubuntu-24.04` /
   `ubuntu-24.04-arm`.
@@ -313,7 +320,10 @@ cleanly when the registry isn't configured.
 
 - Give `release.yml` and `template-sync.yml` `contents: write` and
   nothing broader (`template-sync.yml` also needs `pull-requests:
-  write`, for nothing else); leave `checks.yml` at `contents: read`.
+  write`, for nothing else; `release.yml`'s `build` job also has
+  `packages: write`, so `make publish` can push to the repository's own
+  GHCR packages with `GITHUB_TOKEN`, and no other job does); leave
+  `checks.yml` at `contents: read`.
 - Keep `id-token: write` on `release.yml`'s `publish-packages` job only
   (PyPI, npm and crates.io trusted publishing via GitHub OIDC). GitHub
   permissions are per job, not per step, and that job's `if:` on the
