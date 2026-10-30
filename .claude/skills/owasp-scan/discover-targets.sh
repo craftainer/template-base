@@ -8,6 +8,7 @@
 #   lockfile            an explicit list of lockfile names (osv-scanner's job)
 #   vendored            vendor/, third_party/, node_modules/ at any depth
 #   binary / empty      not text
+#   too-large           over 256 KiB (listed by --skipped, reported as not scanned)
 #   link-or-submodule   a symlink or gitlink: its content is not scanned here
 #   missing             tracked but absent from the worktree
 #
@@ -36,15 +37,18 @@ set -euo pipefail
 mode=targets
 for arg in "$@"; do
   case "$arg" in
-    --summary) mode=summary ;;
-    --skipped) mode=skipped ;;
+    --summary|--skipped)
+      if [ "$mode" != targets ] && [ "$mode" != "${arg#--}" ]; then echo "--summary and --skipped cannot be combined" >&2; exit 2; fi
+      mode=${arg#--} ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
+MAX_BYTES=262144 # files over 256 KiB are listed, not scanned
+
 skip_reason() { # $1 = path; prints a reason when the file is never a target
   case "${1##*/}" in
-    package-lock.json|npm-shrinkwrap.json|pnpm-lock.yaml|yarn.lock|bun.lock|bun.lockb|deno.lock|flake.lock|composer.lock|Cargo.lock|uv.lock|poetry.lock|Pipfile.lock|Gemfile.lock|go.sum) echo lockfile; return ;;
+    package-lock.json|npm-shrinkwrap.json|pnpm-lock.yaml|yarn.lock|bun.lock|bun.lockb|deno.lock|flake.lock|composer.lock|Cargo.lock|uv.lock|poetry.lock|pdm.lock|Pipfile.lock|Gemfile.lock|go.sum|gradle.lockfile|packages.lock.json|Podfile.lock|mix.lock|pubspec.lock|.terraform.lock.hcl) echo lockfile; return ;;
   esac
   case "$1" in
     node_modules/*|*/node_modules/*|vendor/*|*/vendor/*|third_party/*|*/third_party/*) echo vendored ;;
@@ -56,6 +60,7 @@ shebang_kind() { # $1 = path; sets SHEBANG_KIND from the interpreter basename
   local first="" words word interp
   SHEBANG_KIND=""
   IFS= read -r first < "$1" 2>/dev/null || true
+  first=${first%$'\r'}
   case "$first" in '#!'*) ;; *) return 0 ;; esac
   read -r -a words <<< "${first#\#!}"
   [ "${#words[@]}" -gt 0 ] || return 0
@@ -106,6 +111,7 @@ emit() { # prints "<category-or-skip:reason>\t<path>" for every tracked file
     if [ -n "$reason" ]; then printf 'skip:%s\t%s\n' "$reason" "$f"; continue; fi
     if [ ! -s "$f" ]; then printf 'skip:empty\t%s\n' "$f"; continue; fi
     if ! grep -Iq -- '' < "$f" 2>/dev/null; then printf 'skip:binary\t%s\n' "$f"; continue; fi
+    if [ "$(wc -c < "$f")" -gt "$MAX_BYTES" ]; then printf 'skip:too-large\t%s\n' "$f"; continue; fi
     printf '%s\t%s\n' "$(categorise "$f")" "$f"
   done < <(git ls-files -z)
 }
