@@ -163,10 +163,9 @@ already establishes for `ruff`/`mypy`/`pytest`/`pip-audit`.
 
 - **zizmor findings** are fixed at the root (move `${{ }}` expressions
   into `env:`, scope `permissions:` per job, set
-  `persist-credentials: false`). A finding that can't be fixed is
-  suppressed inline on the line it concerns with
-  `# zizmor: ignore[audit-name]` and a comment explaining why, never by
-  disabling the audit.
+  `persist-credentials: false`, replace `issue_comment`/`workflow_run`
+  triggers with a label trigger and in-workflow jobs). Don't suppress an
+  audit to get green.
 
 Run everything at once with:
 
@@ -404,9 +403,9 @@ Further sync behaviour, detailed in `.github/scripts/README.md`:
 - A binary `merge`-tier file the instance changed cannot be merged. It is
   kept as it is, reported as a conflict, listed as `merge.binary` in the
   summary and labelled in the sync PR.
-- The moderation `-apply` workflows fail on an expired `moderation-result`
-  artifact instead of passing: a produced result was lost, so re-run the
-  worker run (see `.github/workflows/README.md`, "Issue moderation").
+- The moderation `apply` jobs download the `moderation-result` artifact
+  strictly, so a lost artifact fails the job instead of passing silently
+  (see `.github/workflows/README.md`, "Issue moderation").
 - The scripts under `.github/scripts/` run on the runner's system `python3`.
   Base ships `.github/scripts/ruff.toml` (`replace` tier), pinned to that
   Python's `target-version`, and `test_script_syntax.py` guards it with

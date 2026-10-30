@@ -4,7 +4,8 @@
 # moderation pipelines: pushes the branch, opens the PR, and relabels the
 # issue. This is the privileged half of the split described in
 # ../workflows/README.md's "Issue moderation" section -- shared so the
-# actual repo-write logic lives in one place.
+# actual repo-write logic lives in one place. Runs as the `apply` job of
+# moderate-bug-fix.yml / moderate-feature-build.yml.
 set -euo pipefail
 
 result_dir="$1"
@@ -13,7 +14,8 @@ branch_suffix="$3"    # "plan" or "repro"
 ready_label="$4"      # e.g. "enhancement:plan-ready"
 confirmed_label="$5"  # e.g. "enhancement:confirmed"
 done_label="$6"       # e.g. "enhancement:built"
-closes_verb="$7"      # "Closes" or "Fixes"
+confirm_label="$7"    # e.g. "enhancement:confirm" (the label a maintainer added to start this run)
+closes_verb="$8"      # "Closes" or "Fixes"
 
 meta="$result_dir/meta.json"
 issue_number="$(jq -r '.issue_number' "$meta")"
@@ -23,13 +25,13 @@ if ! [[ "$issue_number" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# Idempotency: a second /confirm on the same issue can queue a second
-# worker run behind the first (the worker's own concurrency group
-# serializes those), but this apply workflow isn't concurrency-grouped
-# against it (workflow_run can't see the issue number to key on before
-# downloading the artifact) -- so if the ready label is already gone, a
-# prior apply run already processed this issue. No-op rather than
-# double-push/double-PR.
+# Consumed either way, so a maintainer can apply it again to retry.
+gh issue edit "$issue_number" --remove-label "$confirm_label"
+
+# Idempotency: the confirm label applied twice queues a second run behind
+# the first (the workflow's concurrency group serializes them), so if the
+# ready label is already gone, a prior run already processed this issue.
+# No-op rather than double-push/double-PR.
 current_labels="$(gh issue view "$issue_number" --json labels --jq '.labels[].name')"
 if ! grep -qxF "$ready_label" <<<"$current_labels"; then
   echo "Issue #$issue_number no longer carries $ready_label -- already processed, skipping."
