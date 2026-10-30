@@ -20,7 +20,6 @@ language or layout.
   review in depth on top of the normal scan (step 5). Use it for
   auth/session/proxy code, e.g. `asvs=V3,V7,V10` for a backend-for-frontend
   library (web frontend, session management, OAuth/OIDC client).
-- `--include-tests` — also scan test files (excluded by default).
 
 ## Severity scale
 
@@ -48,25 +47,30 @@ or ADR by whoever triages the report, not by this skill.
 
 1. **Discover targets.** Run `bash .claude/skills/owasp-scan/discover-targets.sh`
    from the repo root (`bash` so a lost exec bit does not matter). It
-   prints `<category><TAB><path>` for git-tracked files only, in the
-   categories `python`, `tsjs`, `rust`, `workflow`, `docker`, `compose`,
-   `shell`, `config`. It covers every language file wherever it lives,
-   workflows and composite actions at any depth, `Dockerfile*`, compose
-   files, shell scripts (`*.sh`, Makefiles, extensionless files with a
-   shell/python/node shebang), and all YAML, JSON, TOML, INI and `.env*` /
-   `*.conf` files except package manifests and tsconfig (devcontainer,
-   dependabot, BFF, Keycloak realm, proxy and tool configuration all land
-   in `config`). Non-targets are never dropped silently:
-   `--summary` prints the target counts followed by
-   `not-scanned <reason> <n>` lines, and `--skipped` lists every skipped
-   file with its reason (`lockfile`, `vendored`, `build-output`,
-   `generated`, `tests`, `binary`, `empty`, `uncategorised`). Build-output
-   directories (`dist/`, `build/`, `target/`, `generated/`) are excluded
-   only at the repo root or a package root, so hand-written
-   `scripts/build/*.sh` is kept. Look at `--skipped` once: if an
-   `uncategorised` file is executable code or configuration, tell the user
-   instead of adding it to the scan yourself. Copy the `not-scanned` counts
-   into the report.
+   prints `<category><TAB><path>` for every git-tracked text file. Tracked
+   files are source, so tests, build directories and generated-looking
+   files are scanned like any other. Only these are skipped, each counted
+   under a reason: `lockfile` (an explicit list; osv-scanner covers them),
+   `vendored` (`vendor/`, `third_party/`, `node_modules/` at any depth),
+   `binary`, `empty`, `link-or-submodule` (symlinks and gitlinks) and
+   `missing` (tracked but absent). `--summary` prints the target counts
+   followed by `not-scanned <reason> <n>` lines; `--skipped` lists every
+   skipped file. Copy the `not-scanned` lines into the report.
+
+   The category is the first match in this order:
+
+   | # | Category | Matches |
+   | --- | --- | --- |
+   | 1 | `workflow` | `.github/workflows/*.yml\|yaml` |
+   | 2 | `workflow` | composite actions: `action.yml\|yaml` at any depth |
+   | 3 | `docker` | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `Containerfile[.*]` |
+   | 4 | `compose` | `compose[.*].y[a]ml`, `docker-compose*.y[a]ml` |
+   | 5 | `shell` / `python` / `tsjs` / `rust` | by extension: `*.sh *.bash *.zsh`, Makefiles, `*.mk` / `*.py` / `*.ts *.tsx *.js *.jsx *.mjs *.cjs *.mts *.cts` / `*.rs` |
+   | 6 | `shell` / `python` / `tsjs` | the shebang interpreter's basename, also behind `/usr/bin/env [-S]` (`sh bash dash zsh ksh ash`; `python* pypy*`; `node deno bun tsx ts-node`) |
+   | 7 | `config` | `*.yml *.yaml *.json *.jsonc *.toml *.ini *.cfg *.conf *.properties *.env`, `.env`, `.env.*`, `Caddyfile` (devcontainer, dependabot, BFF, Keycloak realm, proxy and tool configuration) |
+   | 8 | `generic` | any other text file |
+
+   Give `generic` batches the OWASP list only (no file-type checklist).
 
 2. **Run the permanent scanners** (once, before step 4). This skill is
    read-only, so before the first scanner record `git status --porcelain`
@@ -86,11 +90,13 @@ or ADR by whoever triages the report, not by this skill.
      `osv-scanner -r .` on version 1.
    - `prek run --all-files --hook-stage manual` — the repo's own manual
      stage (lint, type-check, language audit hooks such as pip-audit,
-     cargo-audit/deny, pnpm audit, hadolint, shellcheck). prek has no
-     check-only flag and some hooks autofix, so compare `git status
-     --porcelain` afterwards. If it changed anything, say so in the report
-     header (the scanned tree was modified), list the files, and do not
-     revert or commit them; leave that to the user.
+     cargo-audit/deny, pnpm audit, hadolint, shellcheck). Some hooks
+     autofix, so never run it in the scanned tree: create a throwaway
+     checkout with `git worktree add --detach <scratch>/prek-<sha7> HEAD`,
+     run prek there, record its findings, then remove it with
+     `git worktree remove --force <scratch>/prek-<sha7>`. Uncommitted
+     changes in the scanned tree are not in that checkout; say so in the
+     report header when the tree is dirty.
    Convert each scanner finding into the finding format below (same
    severity scale, a concrete scenario, the A0x category). Findings that a
    scanner reports and an agent also reports are merged, not duplicated.
@@ -178,9 +184,7 @@ Contents, in order:
 3. **Manual review coverage** — only with `asvs=`: per requirement, the
    verdict.
 4. **Not scanned** — the discovery step's `not-scanned <reason> <n>` lines
-   (every exclusion with its count, including `uncategorised`), any
-   `uncategorised` file you flagged as code or configuration, scanner
-   results dropped for having no reachable path (with the reason), and
+   (every exclusion with its count), scanner results dropped for having no reachable path (with the reason), and
    any batch that failed twice.
 
 ## OWASP Top 10:2025 checklist (all categories)
