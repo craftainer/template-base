@@ -150,14 +150,26 @@ after a partial first run:
 - An open PR for the branch (`gh pr list --head`) is reused, never
   duplicated.
 - The stage label swaps in one `gh issue edit` (`*-ready` to
-  `fixed`/`built`) after the PR
-  exists, inside the same failure handling. On any failure the stage stays
+  `fixed`/`built`, also removing any `needs-human` an earlier failed
+  attempt left) after the PR exists, inside the same failure handling. On any failure the stage stays
   `*-ready`; the issue gets `needs-human` first, then a best-effort
   comment (with the run link only when `GITHUB_SERVER_URL`,
   `GITHUB_REPOSITORY` and `GITHUB_RUN_ID` are all set), and the job fails.
 - A non-built outcome (Claude could not converge) posts its note and adds
   `needs-human` but keeps `*-ready` on purpose: a maintainer's retry
-  re-runs the build, which spends API budget again.
+  re-runs the build, which spends API budget again. If the label is
+  re-added repeatedly during a run, each queued run can post its own
+  not-built comment (the ready label is still present, so the re-check
+  below does not skip them).
+- The foreign-work check fetches with `--depth=100`. A remote tip more
+  than 100 commits ahead of the base SHA is misjudged as foreign and
+  fails with the generic "Applying the automated result failed" message.
+
+**The confirm label means "run attempted".** `gate` consumes it even when
+the run is then skipped (missing `ANTHROPIC_API_KEY`, untrusted author
+without `claude:ok`, or no `*-ready` label), with no comment on the issue.
+To see why nothing happened, open the run's `gate` job log and the skipped
+`fix`/`build` job's condition.
 
 The workflow shares the
 per-issue concurrency group with the other moderation workflows when the

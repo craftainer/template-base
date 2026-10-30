@@ -53,7 +53,7 @@ PR_CREATE = [
     "",
     f"Fixes #7 --base main --head {BRANCH}",
 ]
-SWAP = "gh issue edit 7 --remove-label bug:repro-ready --add-label bug:fixed"
+SWAP = "gh issue edit 7 --remove-label bug:repro-ready --remove-label needs-human --add-label bug:fixed"
 NEEDS_HUMAN = "gh issue edit 7 --add-label needs-human"
 VIEW = "gh issue view 7 --json labels --jq .labels[].name"
 LIST = f"gh pr list --head {BRANCH} --state open --json number,url --jq .[0].url // \"\""
@@ -226,6 +226,15 @@ class ApplyResultTest(unittest.TestCase):
         self.assertNotIn("--force", " ".join(c for c in log if c.startswith("git push")).replace("--force-with-lease", ""))
         self.assertFalse([c for c in log if c.startswith("gh pr create")])
         self.assertEqual(log[-2:], [LIST, SWAP])
+
+    def test_retry_after_failure_clears_needs_human(self) -> None:
+        """An earlier failure left needs-human on the issue: the one success edit removes it."""
+        proc = self.run_script(labels="bug:repro-ready needs-human")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            [c for c in self.log() if c.startswith("gh issue edit")],
+            ["gh issue edit 7 --remove-label bug:repro-ready --remove-label needs-human --add-label bug:fixed"],
+        )
 
     def test_retry_refuses_foreign_branch_tip(self) -> None:
         """A remote tip that doesn't descend from the base SHA is never overwritten."""

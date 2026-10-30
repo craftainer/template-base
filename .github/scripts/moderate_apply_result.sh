@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Applies one worker job's packaged result (a git patch + outcome
 # metadata -- data, never executed as code) for the feature-build/bug-fix
-# moderation pipelines: pushes the branch, opens (or reuses) the PR, and relabels the
-# issue. This is the privileged half of the split described in
-# ../workflows/README.md's "Issue moderation" section -- shared so the
+# moderation pipelines: pushes the branch, opens (or reuses) the PR, and
+# relabels the issue. This is the privileged half of the split described
+# in ../workflows/README.md's "Issue moderation" section -- shared so the
 # actual repo-write logic lives in one place. Runs as the `apply` job of
 # moderate-bug-fix.yml / moderate-feature-build.yml.
 set -euo pipefail
@@ -21,7 +21,8 @@ closes_verb="$6"      # "Closes" or "Fixes"
 #   - the branch is pushed with --force-with-lease (a retry's `git am`
 #     makes new SHAs);
 #   - an open PR for the branch is reused, never duplicated;
-#   - the stage label swaps in one `gh issue edit`, after the PR exists.
+#   - the stage label swaps in one `gh issue edit`, after the PR exists
+#     (it also clears any needs-human an earlier failed attempt left).
 # A failure leaves the stage at "ready" and flags needs-human.
 
 # Failure path: needs-human first (the signal that matters), then a
@@ -89,7 +90,7 @@ $closes_verb #$issue_number" --base main --head "$branch" || return 1
   fi
 
   # Only now that the PR exists does the stage move on.
-  gh issue edit "$issue_number" --remove-label "$ready_label" --add-label "$done_label" || return 1
+  gh issue edit "$issue_number" --remove-label "$ready_label" --remove-label "needs-human" --add-label "$done_label" || return 1
 }
 
 if [ "$outcome" = built ]; then
