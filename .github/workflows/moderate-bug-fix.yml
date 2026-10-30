@@ -43,8 +43,10 @@ jobs:
     outputs:
       has-key: ${{ steps.check.outputs.has-key }}
       repro-sha: ${{ steps.resolve-sha.outputs.sha }}
-    # Only this job consumes the label, so it needs nothing wider.
+    # issues: write consumes the label; contents: read lets resolve-sha
+    # read the branch tip (a job-level block replaces the workflow-level one).
     permissions:
+      contents: read
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
