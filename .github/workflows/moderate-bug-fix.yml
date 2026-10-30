@@ -68,8 +68,9 @@ jobs:
       GITHUB_ISSUE_NUMBER: ${{ github.event.issue.number }}
     steps:
       - name: Check out repro branch
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ needs.gate.outputs.repro-sha }}
 
       # Unique per run so concurrent runs never collide on
@@ -84,7 +85,7 @@ jobs:
           printf '%s' "${{ secrets.ANTHROPIC_API_KEY }}" > .secrets/claude.txt
 
       - name: Run Claude bug fix
-        uses: devcontainers/ci@v0.3
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
         with:
           runCmd: >-
             .github/scripts/run_claude.sh
@@ -104,15 +105,17 @@ jobs:
       # can comment on the issue instead of it going silently stuck.
       - name: Package result for the apply workflow
         if: always()
+        env:
+          RESULT_SHA: ${{ needs.gate.outputs.repro-sha }}
         run: |
           .github/scripts/moderate_package_result.sh \
-            "${{ needs.gate.outputs.repro-sha }}" \
+            "$RESULT_SHA" \
             moderation-result \
             .moderation-outcome.md
 
       - name: Upload result artifact
         if: always()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: moderation-result
           path: moderation-result
@@ -122,5 +125,5 @@ jobs:
         if: always()
         run: |
           docker compose \
-            -p ${{ env.COMPOSE_PROJECT_NAME }} \
+            -p "$COMPOSE_PROJECT_NAME" \
             down --volumes --remove-orphans

@@ -137,6 +137,10 @@ merge:
   - .github/CONTENTS.md
   - .github/renovate.json
   - .pre-commit-config.yaml
+  # Base's gitleaks config: the useDefault extension is base's, the
+  # [[allowlists]] entries are each instance's own (no include mechanism
+  # to split them), so a three-way merge, like .pre-commit-config.yaml.
+  - .gitleaks.toml
   - .mcp.json
   - .gitignore
   - scripts/README.md

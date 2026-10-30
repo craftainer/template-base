@@ -29,7 +29,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # A triggering run can conclude `success` without having produced a
       # result: its gate/build job was skipped (an unrelated comment, a
@@ -50,12 +52,17 @@ jobs:
 
       - name: Download moderation result
         if: steps.result.outputs.found == 'true'
-        uses: actions/download-artifact@v8.0.2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: moderation-result
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: moderation-result
+
+      # Checkout doesn't persist credentials; git push/fetch use gh's
+      # credential helper, fed by GH_TOKEN.
+      - name: Configure git credentials
+        run: gh auth setup-git
 
       - name: Apply result
         if: steps.result.outputs.found == 'true'
