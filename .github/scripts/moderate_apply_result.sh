@@ -25,7 +25,9 @@ if ! [[ "$issue_number" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# Consumed either way, so a maintainer can apply it again to retry.
+# Consumed either way, so a maintainer can apply it again to retry. (The
+# workflow's last job removes it too, for runs that never reach this
+# script.)
 gh issue edit "$issue_number" --remove-label "$confirm_label"
 
 # Idempotency: the confirm label applied twice queues a second run behind
@@ -38,27 +40,41 @@ if ! grep -qxF "$ready_label" <<<"$current_labels"; then
   exit 0
 fi
 
-gh issue edit "$issue_number" --remove-label "$ready_label" --add-label "$confirmed_label"
+# On a failure the stage label stays at "ready" (so re-adding the confirm
+# label retries) and the issue gets a comment plus needs-human.
+fail() {
+  local run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID:-}"
+  gh issue comment "$issue_number" --body "$1 See $run_url. Re-add the confirm label to retry once fixed."
+  gh issue edit "$issue_number" --add-label "needs-human"
+  exit 1
+}
 
 outcome="$(jq -r '.outcome' "$meta")"
 
 if [ "$outcome" = built ]; then
   base_sha="$(jq -r '.base_sha' "$meta")"
   branch="$branch_prefix/$issue_number-$branch_suffix"
-
-  git config user.name "claude-moderator[bot]"
-  git config user.email "claude-moderator[bot]@users.noreply.github.com"
-  git fetch --depth=1 origin "$base_sha"
-  git checkout -B "$branch" FETCH_HEAD
-  git am "$result_dir/patch.diff"
-  git push -u origin "$branch"
-
   subject="$(jq -r '.subject' "$meta")"
   body="$(jq -r '.body' "$meta")"
-  gh pr create --title "$subject" --body "$body
+
+  # One && chain, not separate commands: errexit is suspended inside an
+  # `if !` condition, so a plain sequence would carry on after a failure.
+  if ! {
+    git config user.name "claude-moderator[bot]" &&
+      git config user.email "claude-moderator[bot]@users.noreply.github.com" &&
+      git fetch --depth=1 origin "$base_sha" &&
+      git checkout -B "$branch" FETCH_HEAD &&
+      git am "$result_dir/patch.diff" &&
+      git push -u origin "$branch" &&
+      gh pr create --title "$subject" --body "$body
 
 $closes_verb #$issue_number" --base main --head "$branch"
+  }; then
+    fail "Applying the automated result (patch, push or PR) failed."
+  fi
 
+  # Only now that the PR exists does the stage move on.
+  gh issue edit "$issue_number" --remove-label "$ready_label" --add-label "$confirmed_label"
   gh issue edit "$issue_number" --remove-label "$confirmed_label" --add-label "$done_label"
 else
   body="$(jq -r '.body' "$meta")"

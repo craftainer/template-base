@@ -128,19 +128,34 @@ credentials would otherwise trip on CodeQL's
 `apply` job runs even when the first job failed (it uploads in an
 `if: always()` step, so Claude's failure still becomes a "failed"
 outcome comment) and is skipped when the first job was (no API key,
-untrusted issue, stage label missing). The whole workflow shares the
+untrusted issue, stage label missing). If the artifact is missing
+(the first job died before packaging), `apply` comments on the issue,
+adds `needs-human` and fails. `apply` moves the stage label forward
+(`*-ready` to `*-confirmed` to `fixed`/`built`) only after the PR exists;
+on a failed push or PR it keeps `*-ready`, comments and adds
+`needs-human`. A final `release-confirm-label` job (`issues: write`
+only, `if: always()`) removes the confirm label however the run ended,
+because `labeled` fires only when a label is added and a stuck label
+could never be re-added to retry. The workflow shares the
 per-issue concurrency group with the other moderation workflows when the
 confirm label is what triggered it; any other label event gets a
-throwaway group so it can't displace a queued confirm run. The apply
-script consumes the confirm label (so a maintainer can re-add it to
-retry) and re-checks the `*:*-ready` label before acting (a no-op, not
-an error, if it's already gone).
+throwaway group so it can't displace a queued confirm run. Known and
+accepted: adding, removing and re-adding the confirm label in quick
+succession can drop a queued run (GitHub keeps one pending run per group).
+The apply script also re-checks the `*:*-ready` label before acting (a
+no-op, not an error, if it's already gone).
 
 **Confirmation is a maintainer's label, not the reporter's `/confirm`
 comment.** Triage comments a link to the repro/plan and asks a
 maintainer to add the confirm label once the reporter agrees. This
 replaces the earlier `/confirm` comment from the issue author: a comment
-trigger cannot tell who may start a spend-bearing run, a label can.
+trigger cannot tell who may start a spend-bearing run, a label can. The
+maintainer who adds `bug:confirm` / `enhancement:confirm` is the
+confirmer and should review the repro or plan branch first: the
+`bug/<n>-repro` / `feature/<n>-plan` branch linked in triage's comment
+on the issue (also under the repository's branches list). The run is
+pinned to that branch's tip when the label is added, so it builds on
+exactly what the maintainer saw only if they looked at the current tip.
 
 Activating this in a given repo/fork takes two one-time steps, neither
 of which is itself a workflow: provisioning a dedicated Anthropic

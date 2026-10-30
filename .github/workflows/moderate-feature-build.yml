@@ -164,10 +164,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # The download is strict: the `build` job uploads in an
-      # `if: always()` step, so a missing artifact means a real failure
-      # (runner crash, upload error) and should fail this job.
+      # The `build` job uploads in an `if: always()` step, so a missing
+      # artifact means it died before packaging (runner crash, upload
+      # error) -- handled by the "Report" step below rather than failing
+      # silently, hence continue-on-error here.
       - name: Download moderation result
+        id: download
+        continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: moderation-result
@@ -178,10 +181,40 @@ jobs:
       - name: Configure git credentials
         run: gh auth setup-git
 
+      - name: Report a missing moderation result
+        if: steps.download.outcome == 'failure'
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "The automated run produced no result to apply (it failed before packaging one). See $RUN_URL. Re-add the confirm label to retry."
+          gh issue edit "$ISSUE_NUMBER" --add-label needs-human
+          exit 1
+
       - name: Apply result
+        if: steps.download.outcome == 'success'
         run: |
           .github/scripts/moderate_apply_result.sh \
             moderation-result \
             feature plan \
             "enhancement:plan-ready" "enhancement:confirmed" "enhancement:built" "enhancement:confirm" \
             Closes
+
+  # Frees the confirm label whatever happened above (Claude job skipped or
+  # failed, apply never ran, ...): `labeled` fires only when the label is
+  # added, so a stuck label could never be re-added to retry. Its own job
+  # so the Claude job stays read-only and this one holds only issues: write.
+  release-confirm-label:
+    needs: [gate, build, apply]
+    if: ${{ always() && github.event.label.name == 'enhancement:confirm' }}
+    permissions:
+      issues: write
+    # renovate: datasource=github-runners depName=ubuntu
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Remove the confirm label
+        run: gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "enhancement:confirm"
