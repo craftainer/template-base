@@ -103,11 +103,69 @@ instance's own toolchain needs.
 `.pre-commit-config.yaml` defines whitespace/EOF fixers, YAML/TOML/JSON
 checks, `conventional-pre-commit` (Conventional Commits, enforced at the
 `commit-msg` stage), the `template-sync-manifest` completeness check, and
-the `devcontainer-lock` lockfile-consistency check. An instance layers
+the `devcontainer-lock` lockfile-consistency check, and three security
+scanners (below). An instance layers
 its own language-specific hooks on top (lint,
 format, type check, test suite, dependency-vulnerability scan, ...),
 matching the shape `template-fastapi`'s own `.pre-commit-config.yaml`
 already establishes for `ruff`/`mypy`/`pytest`/`pip-audit`.
+
+### Security scanners
+
+| Hook | Scans | Stage | Network | OWASP (2025) |
+|---|---|---|---|---|
+| `zizmor` | `.github/workflows/*.yml`: template injection, excessive permissions, unpinned or tag-pinned Actions, persisted credentials | `pre-commit`, `manual` | offline locally; online in CI | A01, A03, A08 |
+| `gitleaks` | staged changes on commit; `gitleaks-history` (manual stage) scans the full git history | `pre-commit`; `manual` | none | A04 |
+| `osv-scanner` | supported lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `pylock.toml`, `Cargo.lock`, `requirements*.txt`) against osv.dev | `manual` | online | A03 |
+
+- **Online/offline.** Locally `zizmor` has no token and runs its offline
+  audits only. `checks.yml` passes `GH_TOKEN: ${{ github.token }}` into
+  the devcontainer (the job's `contents: read` is all zizmor's docs ask
+  for), which enables the online audits (for example, checking an
+  Action's pinned SHA against the upstream repository). `osv-scanner`
+  always needs the network.
+- **No lockfile, no run.** `osv-scanner` carries `always_run: false`
+  and a `files:` regex of the lockfiles above, so a repo without one
+  (this template) skips it instead of failing with exit 128 ("no
+  packages found"). An instance that adds a lockfile gets the scan
+  with no further change; one using another lockfile format extends
+  the regex in its `.pre-commit-config.yaml`.
+- **Pinning.** Every `uses:` in `.github/workflows/` is pinned to a full
+  commit SHA with a `# vX.Y.Z` comment; Renovate
+  (`helpers:pinGitHubActionDigests`) keeps both current. Hook `rev:`s
+  stay tags: Renovate's `pre-commit` manager updates them, but cannot
+  turn a tag into a frozen SHA (the update fails).
+- **gitleaks allowlist.** Config is `.gitleaks.toml` (`[extend]
+  useDefault = true`). To allow a reviewed false positive, add a
+  narrowly scoped entry (a `paths` and/or `regexes` match, never a whole
+  rule or directory) with a `description` saying why it is safe:
+
+  ```toml
+  [[allowlists]]
+  description = "Dummy token in the parser's test fixture"
+  paths = ['^tests/fixtures/sample_token\.txt$']
+  regexes = ['ghp_EXAMPLEEXAMPLEEXAMPLE']
+  condition = "AND"
+  ```
+
+  A real secret found in history is rotated first; allowlisting it is
+  never the fix.
+- **Ignoring a vulnerability.** Create `osv-scanner.toml` next to the
+  lockfile (or at the repo root) with a reason and an expiry, so an
+  ignore can't outlive its justification:
+
+  ```toml
+  [[IgnoredVulns]]
+  id = "GHSA-xxxx-xxxx-xxxx"
+  effectiveUntil = 2027-01-31
+  reason = "Not reachable: we never call the affected parser"
+  ```
+
+- **zizmor findings** are fixed at the root (move `${{ }}` expressions
+  into `env:`, scope `permissions:` per job, set
+  `persist-credentials: false`, replace `issue_comment`/`workflow_run`
+  triggers with a label trigger and in-workflow jobs). Don't suppress an
+  audit to get green.
 
 Run everything at once with:
 
@@ -345,9 +403,9 @@ Further sync behaviour, detailed in `.github/scripts/README.md`:
 - A binary `merge`-tier file the instance changed cannot be merged. It is
   kept as it is, reported as a conflict, listed as `merge.binary` in the
   summary and labelled in the sync PR.
-- The moderation `-apply` workflows fail on an expired `moderation-result`
-  artifact instead of passing: a produced result was lost, so re-run the
-  worker run (see `.github/workflows/README.md`, "Issue moderation").
+- The moderation `apply` jobs download the `moderation-result` artifact
+  strictly, so a lost artifact fails the job instead of passing silently
+  (see `.github/workflows/README.md`, "Issue moderation").
 - The scripts under `.github/scripts/` run on the runner's system `python3`.
   Base ships `.github/scripts/ruff.toml` (`replace` tier), pinned to that
   Python's `target-version`, and `test_script_syntax.py` guards it with
