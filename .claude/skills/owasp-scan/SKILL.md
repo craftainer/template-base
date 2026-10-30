@@ -35,40 +35,62 @@ Every finding carries one severity:
 - **Medium** — real weakness that needs an unlikely precondition or has
   limited impact, or a missing defence-in-depth control that makes
   another bug worse.
-- **Low** — hardening gap or best-practice deviation with no concrete
-  exploit path found.
+- **Low** — a specific, named hardening gap (a `path:line` and the
+  consequence if another defence fails or the deployment changes), with
+  minor impact on its own.
 
-Without a concrete scenario a finding is not reported at all. An accepted
-Medium/Low is recorded with a reason in the repo's NFR or ADR by whoever
-triages the report, not by this skill.
+Every reported finding names a `path:line` and a scenario, Low included.
+Generic advice with no specific gap ("consider adding X") is not reported
+at all. An accepted Medium/Low is recorded with a reason in the repo's NFR
+or ADR by whoever triages the report, not by this skill.
 
 ## Steps
 
-1. **Discover targets.** Run `.claude/skills/owasp-scan/discover-targets.sh`
-   from the repo root (`--summary` for counts per category). It prints
-   `<category><TAB><path>` for git-tracked files only, in the categories
-   `python`, `tsjs`, `rust`, `workflow`, `docker`, `compose`, `shell`,
-   `config`. It covers source roots wherever they are (`src/`, `app/`,
-   `bff/`, `.github/scripts/`, ...), `.github/workflows/*.yml`,
-   `Dockerfile*`, compose files, `*.sh`, and app/BFF config (`config/`,
-   `bff/` data files, `.env*`, `*.conf`, realm JSON). It excludes
-   vendored, generated and build output, minified files, `*.d.ts`, tests,
-   and lockfiles (osv-scanner covers lockfiles). Do not add a file the
-   script left out unless the user asks.
+1. **Discover targets.** Run `bash .claude/skills/owasp-scan/discover-targets.sh`
+   from the repo root (`bash` so a lost exec bit does not matter). It
+   prints `<category><TAB><path>` for git-tracked files only, in the
+   categories `python`, `tsjs`, `rust`, `workflow`, `docker`, `compose`,
+   `shell`, `config`. It covers every language file wherever it lives,
+   workflows and composite actions at any depth, `Dockerfile*`, compose
+   files, shell scripts (`*.sh`, Makefiles, extensionless files with a
+   shell/python/node shebang), and all YAML, JSON, TOML, INI and `.env*` /
+   `*.conf` files except package manifests and tsconfig (devcontainer,
+   dependabot, BFF, Keycloak realm, proxy and tool configuration all land
+   in `config`). Non-targets are never dropped silently:
+   `--summary` prints the target counts followed by
+   `not-scanned <reason> <n>` lines, and `--skipped` lists every skipped
+   file with its reason (`lockfile`, `vendored`, `build-output`,
+   `generated`, `tests`, `binary`, `empty`, `uncategorised`). Build-output
+   directories (`dist/`, `build/`, `target/`, `generated/`) are excluded
+   only at the repo root or a package root, so hand-written
+   `scripts/build/*.sh` is kept. Look at `--skipped` once: if an
+   `uncategorised` file is executable code or configuration, tell the user
+   instead of adding it to the scan yourself. Copy the `not-scanned` counts
+   into the report.
 
-2. **Run the permanent scanners** (once, in the foreground or in parallel
-   with step 3). For each tool record `<tool> --version`; if a tool is
-   missing, say so in the report rather than skipping silently.
+2. **Run the permanent scanners** (once, before step 4). This skill is
+   read-only, so before the first scanner record `git status --porcelain`
+   and the HEAD SHA; the scanners below must not change tracked files.
+   For each tool record `<tool> --version`; if a tool is missing, say so in
+   the report rather than skipping silently. Scanners exit non-zero when
+   they **find** something: that is a result to parse and convert, not a
+   tool failure. Only a missing binary, an unknown flag or a crash with no
+   findings output is a failure, and it goes in the report header.
    - `zizmor .` — workflow static analysis (A02/A03/A08).
    - `gitleaks git --redact .` — secrets across the **full history**, not
-     only the working tree (A04). Never copy a secret value into the
-     report; cite the commit and file.
+     only the working tree (A04). Needs gitleaks 8.19 or later; on older
+     versions use `gitleaks detect --redact --source .`. Never copy a
+     secret value into the report; cite the commit and file.
    - `osv-scanner scan source -r .` — known-vulnerable dependencies from
-     the lockfiles (A03). Fall back to `osv-scanner -r .` on versions
-     before 2.
+     the lockfiles (A03). Needs osv-scanner 2 or later; use
+     `osv-scanner -r .` on version 1.
    - `prek run --all-files --hook-stage manual` — the repo's own manual
      stage (lint, type-check, language audit hooks such as pip-audit,
-     cargo-audit/deny, pnpm audit, hadolint, shellcheck).
+     cargo-audit/deny, pnpm audit, hadolint, shellcheck). prek has no
+     check-only flag and some hooks autofix, so compare `git status
+     --porcelain` afterwards. If it changed anything, say so in the report
+     header (the scanned tree was modified), list the files, and do not
+     revert or commit them; leave that to the user.
    Convert each scanner finding into the finding format below (same
    severity scale, a concrete scenario, the A0x category). Findings that a
    scanner reports and an agent also reports are merged, not duplicated.
@@ -78,8 +100,13 @@ triages the report, not by this skill.
    Each batch becomes one subagent task. Pick the checklist sections
    for the batch's category (see "Checklists").
 
-4. **Scan in parallel.** In a single message launch one `Explore` agent
-   per batch and collect results as they land. Give each agent:
+4. **Scan in parallel.** Launch one `general-purpose` agent per batch (not
+   `Explore`: it reads excerpts, and a security review needs each file
+   read in full). Run at most 8 agents at a time: start 8, and start the
+   next batch as each one finishes. Retry a failed batch once; if the
+   retry fails too, list its files under "Not scanned". Collect results as
+   they land. Give each agent:
+   - the instruction to read every assigned file completely;
    - the exact file list (full paths) and the checklist for its category,
      plus the OWASP list below;
    - the finding format and severity scale above;
@@ -93,9 +120,9 @@ triages the report, not by this skill.
      keep each reply under 300 words per file.
 
 5. **Manual review focus (only with `asvs=`).** For each named chapter,
-   launch one more `Explore` agent over the auth, session, cookie, token,
-   proxy and redirect code (grep for the relevant surfaces rather than
-   reading the whole repo). Give it the chapter's requirement IDs from the
+   launch one more `general-purpose` agent (within the 8-agent limit) over
+   the auth, session, cookie, token, proxy and redirect code (grep for the
+   relevant surfaces to find the files, then read each one in full). Give it the chapter's requirement IDs from the
    table below (fetch the exact wording from the ASVS source if the
    requirement isn't listed) and ask for, per requirement: *met*,
    *violated* (a finding with `path:line` and scenario) or *not
@@ -132,7 +159,8 @@ was fine.
 
 Write `owasp-scan-<repo>-<sha7>-<UTC yyyymmddThhmmZ>.md` to the scratch
 directory: the session scratchpad when the harness names one, otherwise
-`${TMPDIR:-/tmp}/owasp-scan/`. It is outside the repository on purpose,
+`${TMPDIR:-/tmp}/owasp-scan/` (run `mkdir -p` on it first). `<repo>` is
+the repository directory name reduced to `[A-Za-z0-9._-]`. It is outside the repository on purpose,
 so it can't be committed by accident, needs no `.gitignore` entry, and
 the skill stays identical in every repo it is synced to. A run does not
 overwrite an earlier report because the name carries the commit and time.
@@ -149,8 +177,11 @@ Contents, in order:
 2. **Findings** — the lines in the format above, grouped by severity.
 3. **Manual review coverage** — only with `asvs=`: per requirement, the
    verdict.
-4. **Not scanned** — files the discovery step excluded by category (counts)
-   and any batch that failed.
+4. **Not scanned** — the discovery step's `not-scanned <reason> <n>` lines
+   (every exclusion with its count, including `uncategorised`), any
+   `uncategorised` file you flagged as code or configuration, scanner
+   results dropped for having no reachable path (with the reason), and
+   any batch that failed twice.
 
 ## OWASP Top 10:2025 checklist (all categories)
 
@@ -280,12 +311,15 @@ Give each agent the section for its category in addition to the list above.
 ## ASVS 5.0 references
 
 Cite as `[ASVS <chapter>.<section>.<requirement>]`, e.g. `[ASVS 7.2.4]`.
-The IDs and wording below were checked against the official OWASP ASVS
-repository, tag `v5.0.0_release`, directory `5.0/en/` (files
-`0x10-V1-...md` through `0x25-V16-...md`):
+Every requirement ID in the table was confirmed to exist in the official
+OWASP ASVS repository, tag `v5.0.0_release`, directory `5.0/en/` (files
+`0x10-V1-...md` through `0x25-V16-...md`), and each short description was
+read against the requirement text there. The descriptions are summaries,
+not quotations:
 <https://github.com/OWASP/ASVS/tree/v5.0.0_release/5.0/en>. If a needed
-requirement isn't in this table, fetch the chapter file from that tag
-rather than citing from memory. Only cite what truly matches.
+requirement isn't in this table, or the summary is too loose for the
+finding, fetch the chapter file from that tag rather than citing from
+memory. Only cite what truly matches.
 
 | Chapter | Requirements commonly mapped from findings |
 | --- | --- |
@@ -293,17 +327,17 @@ rather than citing from memory. Only cite what truly matches.
 | V2 Validation and Business Logic | 2.1.1 documented validation rules; 2.2.1 input validated against business expectations; 2.3.1 sequential flow enforced; 2.3.2 business logic limits; 2.4.1 anti-automation |
 | V3 Web Frontend Security | 3.2.1 no incorrect content rendering; 3.2.2 text not rendered as HTML; 3.3.1 cookie `Secure`; 3.3.2 cookie `SameSite`; 3.3.3 `__Host-` prefix; 3.3.4 `HttpOnly`; 3.3.5 cookie size; 3.4.1 HSTS; 3.4.2 fixed CORS `Access-Control-Allow-Origin`; 3.4.3 CSP; 3.4.4 `nosniff`; 3.4.5 referrer policy; 3.4.6 `frame-ancestors`; 3.5.1 anti-forgery validation when not relying on preflight; 3.5.2 sensitive calls must always trigger preflight if it is relied on; 3.5.3 appropriate HTTP methods; 3.5.5 `postMessage` origin; 3.7.2 redirects only to allow-listed hosts |
 | V4 API and Web Service | 4.1.1 `Content-Type` matches body; 4.2.1 HTTP message boundaries (request smuggling); 4.2.5 outbound request construction |
-| V5 File Handling | 5.2.1-5.2.6 upload limits and content checks; 5.3.2 server-generated file paths; 5.4.1 user-submitted filenames |
+| V5 File Handling | 5.2.1 accepted file size; 5.2.2 accepted files validated against permitted types; 5.2.3 compressed files checked against size limits; 5.2.5 no symlinks in compressed uploads; 5.3.2 server-generated file paths; 5.4.1 user-submitted filenames |
 | V6 Authentication | 6.2.1 password length; 6.3.1 credential-stuffing/brute-force controls; 6.4.1 generated initial secrets |
 | V7 Session Management | 7.1.1 timeouts documented; 7.1.3 federated session handling documented; 7.2.1 backend token verification; 7.2.2 dynamically generated tokens; 7.2.3 random reference tokens; 7.2.4 new token on (re-)authentication; 7.3.1 inactivity timeout; 7.3.2 absolute lifetime; 7.4.1 logout invalidates the session; 7.4.2 account disable terminates sessions; 7.5.1-7.5.3 re-authentication for sensitive actions; 7.6.1 RP/IdP session lifetime; 7.6.2 session needs consent or explicit action |
 | V8 Authorization | 8.2.1 function-level access; 8.2.2 data-specific access (IDOR); 8.3.1 enforced at a trusted service layer |
 | V9 Self-contained Tokens | 9.1.1 signature/MAC validated; 9.1.2 algorithm allow-list |
-| V10 OAuth and OIDC | 10.1.1 tokens only to components that need them (BFF keeps tokens off the browser); 10.1.2 client accepts code/ID token only from a flow its own session started (`state`, PKCE); 10.2.1 CSRF protection in the code flow; 10.2.2 mix-up defence; 10.2.3 minimal scopes; 10.3.1 audience check; 10.3.2-10.3.5 resource server claims, recentness, replay; 10.4.1 redirect-URI allow-list; 10.4.2-10.4.3 single-use short-lived code; 10.4.4 grants limited per client; 10.4.5 refresh-token replay; 10.4.6 PKCE; 10.4.8 refresh-token absolute expiry; 10.4.9 revocation; 10.4.10 confidential-client authentication; 10.4.11 minimal scopes assigned; 10.4.12 `response_mode`; 10.5.1 ID token replay (`nonce`); 10.5.2 user identified by `sub`; 10.5.3 issuer impersonation rejected; 10.5.4 ID token audience; 10.5.5 back-channel logout DoS; 10.6.1-10.6.2 OpenID provider; 10.7.1-10.7.3 consent |
+| V10 OAuth and OIDC | 10.1.1 tokens only to components that need them (BFF keeps tokens off the browser); 10.1.2 client accepts code/ID token only from a flow its own session started (`state`, PKCE); 10.2.1 CSRF protection in the code flow; 10.2.2 mix-up defence; 10.2.3 minimal scopes; 10.3.1 audience check; 10.3.2 authorization from access-token claims; 10.3.5 stolen or replayed access tokens; 10.4.1 redirect-URI allow-list; 10.4.2-10.4.3 single-use short-lived code; 10.4.4 grants limited per client; 10.4.5 refresh-token replay; 10.4.6 PKCE; 10.4.8 refresh-token absolute expiry; 10.4.9 revocation; 10.4.10 confidential-client authentication; 10.4.11 minimal scopes assigned; 10.4.12 `response_mode`; 10.5.1 ID token replay (`nonce`); 10.5.2 user identified by `sub`; 10.5.3 issuer impersonation rejected; 10.5.4 ID token audience; 10.5.5 back-channel logout DoS; 10.6.1-10.6.2 OpenID provider; 10.7.1-10.7.3 consent |
 | V11 Cryptography | 11.2.1 vetted implementations; 11.3.1-11.3.2 approved modes and ciphers; 11.4.1 approved hashes; 11.4.2 password KDF; 11.5.1-11.5.2 CSPRNG |
 | V12 Secure Communication | 12.1.1-12.1.2 TLS versions and ciphers; 12.2.1 TLS to external-facing services; 12.2.2 publicly trusted certificates; 12.3.1 TLS for all inbound/outbound; 12.3.2 clients validate certificates |
 | V13 Configuration | 13.2.3 service credentials not defaults; 13.2.4-13.2.5 outbound allow-lists; 13.3.1 secrets management; 13.3.2 least-privilege secret access; 13.4.1 no source-control metadata deployed; 13.4.2 debug off in production; 13.4.3 no directory listings |
 | V14 Data Protection | 14.2.1 sensitive data not in URLs; 14.2.2 no caching of sensitive data in servers; 14.2.3 not sent to untrusted parties; 14.3.1 client storage cleared after session end; 14.3.2 anti-caching headers; 14.3.3 browser storage |
-| V15 Secure Coding and Architecture | 15.1.1 remediation time frames; 15.1.2 SBOM/inventory; 15.2.1 no out-of-date components; 15.2.3 only required functionality in production; 15.2.4 dependencies from expected sources; 15.3.1 return only required fields; 15.3.2 no following redirects on backend calls; 15.3.3 mass assignment; 15.3.4 original client IP through proxies; 15.3.5 strict typing; 15.4.1-15.4.2 thread safety, TOCTOU |
+| V15 Secure Coding and Architecture | 15.1.1 remediation time frames; 15.1.2 SBOM/inventory; 15.2.1 no out-of-date components; 15.2.3 only required functionality in production; 15.2.4 dependencies from expected sources; 15.3.1 return only required fields; 15.3.2 no following redirects on backend calls; 15.3.3 mass assignment; 15.3.4 original client IP through proxies; 15.3.5 strict typing; 15.4.1 thread-safe shared objects; 15.4.2 check-then-act (TOCTOU) races |
 | V16 Security Logging and Error Handling | 16.2.1 log metadata; 16.2.5 sensitive data in logs; 16.3.1 authentication logged; 16.3.2 failed authorization logged; 16.3.3-16.3.4 security events and control failures; 16.4.1 log injection; 16.4.2 log protection; 16.5.1 generic error messages; 16.5.2 fail securely when a dependency fails; 16.5.3 fail gracefully; 16.5.4 last-resort handler |
 
 OWASP Top 10:2025 to ASVS chapter, as a starting point for agents:
@@ -317,8 +351,8 @@ V10; A08 → V1.5.2, V15.2.4, V9; A09 → V16; A10 → V16.5.
   invoke those. It is narrower (OWASP-only) and faster because it fans
   out.
 - Scanner output is evidence, not a verdict: a zizmor or osv-scanner
-  result still needs the scenario and severity from the scale above, and
-  one with no reachable path can be reported Low or dropped with the
-  reason in "Not scanned".
+  result still needs the scenario and severity from the scale above. One
+  with no reachable path is dropped with the reason in "Not scanned"; it is
+  reported Low only when the weakness itself is real and named.
 - Triage (which findings to fix, which to accept and record) belongs to
   the caller, not this skill.
