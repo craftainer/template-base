@@ -150,7 +150,7 @@ after a partial first run:
 - An open PR for the branch (`gh pr list --head`) is reused, never
   duplicated.
 - The stage label swaps in one `gh issue edit` (`*-ready` to
-  `fixed`/`built`; `*-confirmed` is no longer applied) after the PR
+  `fixed`/`built`) after the PR
   exists, inside the same failure handling. On any failure the stage stays
   `*-ready`; the issue gets `needs-human` first, then a best-effort
   comment (with the run link only when `GITHUB_SERVER_URL`,
@@ -196,8 +196,6 @@ deterministic workflow step:
 - Feature: `enhancement` → (`enhancement:not-a-fit` |
   `enhancement:plan-ready`) → `enhancement:built`; a maintainer adds
   `enhancement:confirm` to start the build (consumed when the run starts).
-  The `*:confirmed` labels still exist (`moderate-setup.yml`) but the
-  pipeline no longer applies them.
 
 Either sequence can end at `needs-human` instead, if Claude can't
 reproduce the bug / can't get the fix passing checks / can't complete
