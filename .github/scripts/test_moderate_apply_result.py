@@ -11,19 +11,52 @@ import unittest
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
-# Both fakes append their argv (one line per call) to $FAKE_LOG. The fake gh
-# answers `issue view` with $FAKE_LABELS; the fake git fails when its
-# subcommand is $FAKE_GIT_FAIL.
-FAKE_GH = """#!/usr/bin/env bash
-echo "gh $*" >> "$FAKE_LOG"
-if [ "$1 $2" = "issue view" ]; then printf '%s\\n' $FAKE_LABELS; fi
+# Both fakes append their argv (one line per call) to $FAKE_LOG. A call fails
+# when "<tool> <argv>" starts with any "|"-separated prefix in $FAKE_FAIL
+# (the call is still logged). The fake gh answers `issue view` with
+# $FAKE_LABELS and `pr list` with $FAKE_PR_URL; the fake git answers
+# `ls-remote` with $FAKE_REMOTE_SHA.
+FAKE_COMMON = """CALL="$TOOL $*"
+echo "$CALL" >> "$FAKE_LOG"
+IFS='|'
+for prefix in ${FAKE_FAIL:-}; do
+  case "$CALL" in "$prefix"*) echo "fake $TOOL: failing '$prefix'" >&2; exit 1;; esac
+done
+unset IFS
 """
-FAKE_GIT = """#!/usr/bin/env bash
-echo "git $*" >> "$FAKE_LOG"
-[ "$1" != "${FAKE_GIT_FAIL:-}" ] || { echo "fake git: $1 failed" >&2; exit 1; }
+FAKE_GH = (
+    "#!/usr/bin/env bash\nTOOL=gh\n"
+    + FAKE_COMMON
+    + """[ "$1 $2" != "issue view" ] || printf '%s\\n' $FAKE_LABELS
+[ "$1 $2" != "pr list" ] || printf '%s\\n' "${FAKE_PR_URL:-}"
 """
+)
+FAKE_GIT = (
+    "#!/usr/bin/env bash\nTOOL=git\n"
+    + FAKE_COMMON
+    + """[ "$1" != ls-remote ] || { [ -z "${FAKE_REMOTE_SHA:-}" ] || printf '%s\\trefs/heads/x\\n' "$FAKE_REMOTE_SHA"; }
+"""
+)
 
-ARGS = ["bug", "repro", "bug:repro-ready", "bug:confirmed", "bug:fixed", "bug:confirm", "Fixes"]
+ARGS = ["bug", "repro", "bug:repro-ready", "bug:fixed", "Fixes"]
+BRANCH = "bug/7-repro"
+READY = "bug bug:repro-ready"
+SETUP = [
+    "git config user.name claude-moderator[bot]",
+    "git config user.email claude-moderator[bot]@users.noreply.github.com",
+    "git fetch --depth=1 origin abc123",
+    f"git checkout -B {BRANCH} FETCH_HEAD",
+    "git am {result}/patch.diff",
+]
+PR_CREATE = [
+    "gh pr create --title fix: the thing --body details",
+    "",
+    f"Fixes #7 --base main --head {BRANCH}",
+]
+SWAP = "gh issue edit 7 --remove-label bug:repro-ready --add-label bug:fixed"
+NEEDS_HUMAN = "gh issue edit 7 --add-label needs-human"
+VIEW = "gh issue view 7 --json labels --jq .labels[].name"
+LIST = f"gh pr list --head {BRANCH} --state open --json number,url --jq .[0].url // \"\""
 
 
 @unittest.skipUnless(shutil.which("jq"), "jq not installed (the script parses meta.json with it)")
@@ -44,7 +77,13 @@ class ApplyResultTest(unittest.TestCase):
         self.result.mkdir()
 
     def run_script(
-        self, outcome: str = "built", labels: str = "bug bug:repro-ready", git_fail: str = ""
+        self,
+        outcome: str = "built",
+        labels: str = READY,
+        fail: str = "",
+        remote_sha: str = "",
+        pr_url: str = "",
+        run_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run the script against a canned ``meta.json``."""
         meta = {
@@ -60,7 +99,13 @@ class ApplyResultTest(unittest.TestCase):
             "PATH": f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
             "FAKE_LOG": str(self.tmp / "log.txt"),
             "FAKE_LABELS": labels,
-            "FAKE_GIT_FAIL": git_fail,
+            "FAKE_FAIL": fail,
+            "FAKE_REMOTE_SHA": remote_sha,
+            "FAKE_PR_URL": pr_url,
+            "GITHUB_SERVER_URL": "https://github.com",
+            "GITHUB_REPOSITORY": "o/r",
+            "GITHUB_RUN_ID": "99",
+            **(run_env or {}),
         }
         return subprocess.run(  # noqa: S603 -- fixed argv, trusted script
             [str(SCRIPTS / "moderate_apply_result.sh"), str(self.result), *ARGS],
@@ -76,55 +121,138 @@ class ApplyResultTest(unittest.TestCase):
         path = self.tmp / "log.txt"
         return path.read_text().splitlines() if path.exists() else []
 
-    def index(self, prefix: str) -> int:
-        """Return the position of the first call starting with ``prefix``."""
-        for i, line in enumerate(self.log()):
-            if line.startswith(prefix):
-                return i
-        self.fail(f"no call starting with {prefix!r} in {self.log()}")
+    def setup_calls(self) -> list[str]:
+        """Return the expected git calls up to and including ``git am``."""
+        return [c.format(result=self.result) for c in SETUP]
 
-    def test_success_creates_pr_then_moves_stage(self) -> None:
-        """The stage label moves only after the PR exists; args 7 and 8 are used correctly."""
+    def push(self, expected: str = "") -> str:
+        """Return the expected push call, leased on ``expected``."""
+        return f"git push --force-with-lease={BRANCH}:{expected} origin {BRANCH}"
+
+    def assert_failed_cleanly(self, proc: subprocess.CompletedProcess[str], log: list[str]) -> None:
+        """Assert needs-human came before the comment, and the stage never moved."""
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertNotIn(SWAP, log)
+        nh = log.index(NEEDS_HUMAN)
+        comment = next(i for i, c in enumerate(log) if c.startswith("gh issue comment 7"))
+        self.assertLess(nh, comment)
+        self.assertIn("See https://github.com/o/r/actions/runs/99.", log[comment])
+
+    def test_happy_path(self) -> None:
+        """Exactly these calls, in order: no PR yet, so one is created, then one label swap."""
         proc = self.run_script()
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        log = self.log()
-        self.assertIn("gh issue edit 7 --remove-label bug:confirm", log)  # arg 7
-        pr = self.index("gh pr create")
-        # arg 8: the PR body is multi-line, so its last line is logged on its own.
-        self.assertIn("Fixes #7 --base main --head bug/7-repro", log[pr:])
-        self.assertLess(self.index("git push"), pr)
-        self.assertLess(pr, self.index("gh issue edit 7 --remove-label bug:repro-ready --add-label bug:confirmed"))
-        self.assertLess(
-            self.index("gh issue edit 7 --remove-label bug:repro-ready"),
-            self.index("gh issue edit 7 --remove-label bug:confirmed --add-label bug:fixed"),
+        self.assertEqual(
+            self.log(),
+            [VIEW, *self.setup_calls(), f"git ls-remote origin refs/heads/{BRANCH}", self.push(), LIST]
+            + PR_CREATE
+            + [SWAP],
         )
-        self.assertNotIn("gh issue edit 7 --add-label needs-human", log)
 
-    def test_failure_keeps_ready_stage_and_flags_needs_human(self) -> None:
-        """A failing push leaves the ready label alone, comments and adds needs-human."""
-        proc = self.run_script(git_fail="push")
-        self.assertEqual(proc.returncode, 1)
+    def test_am_fails(self) -> None:
+        """A failing ``git am`` stops before any push or PR; the stage stays ready."""
+        proc = self.run_script(fail="git am")
         log = self.log()
-        self.assertFalse([c for c in log if c.startswith("gh pr create")])
-        self.assertFalse([c for c in log if "--add-label bug:confirmed" in c or "--add-label bug:fixed" in c])
-        self.assertFalse([c for c in log if "--remove-label bug:repro-ready" in c])
+        self.assertEqual(log[: len(self.setup_calls()) + 1], [VIEW, *self.setup_calls()])
+        self.assertFalse([c for c in log if c.startswith(("git push", "gh pr"))])
+        self.assert_failed_cleanly(proc, log)
+
+    def test_push_fails(self) -> None:
+        """A failing push opens no PR and leaves the stage ready."""
+        proc = self.run_script(fail="git push")
+        log = self.log()
+        self.assertIn(self.push(), log)
+        self.assertFalse([c for c in log if c.startswith("gh pr")])
+        self.assert_failed_cleanly(proc, log)
+
+    def test_pr_create_fails(self) -> None:
+        """Push succeeded, PR creation failed: stage stays ready, needs-human is added."""
+        proc = self.run_script(fail="gh pr create")
+        log = self.log()
+        self.assertIn(self.push(), log)
+        self.assertIn(PR_CREATE[0], log)
+        self.assert_failed_cleanly(proc, log)
+
+    def test_label_edit_fails_after_pr(self) -> None:
+        """The PR exists but the swap failed: handled as a failure, and a retry reuses the PR."""
+        proc = self.run_script(fail=SWAP)
+        log = self.log()
+        self.assertLess(log.index(PR_CREATE[0]), log.index(SWAP))
+        self.assertEqual(log.count(SWAP), 1)
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertIn(NEEDS_HUMAN, log)
         self.assertTrue([c for c in log if c.startswith("gh issue comment 7")])
-        self.assertIn("gh issue edit 7 --add-label needs-human", log)
+        # The retry: PR already open, remote tip is the earlier attempt's SHA.
+        (self.tmp / "log.txt").unlink()
+        retry = self.run_script(remote_sha="def456", pr_url="https://github.com/o/r/pull/8")
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.assertEqual(
+            self.log(),
+            [
+                VIEW,
+                *self.setup_calls(),
+                f"git ls-remote origin refs/heads/{BRANCH}",
+                "git fetch --depth=100 origin abc123 def456",
+                "git merge-base --is-ancestor abc123 def456",
+                self.push("def456"),
+                LIST,
+                SWAP,
+            ],
+        )
+
+    def test_comment_fails_inside_fail(self) -> None:
+        """A failed comment doesn't stop needs-human (added first) and still exits non-zero."""
+        proc = self.run_script(fail="git push|gh issue comment")
+        log = self.log()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn(NEEDS_HUMAN, log)
+        self.assertLess(log.index(NEEDS_HUMAN), next(i for i, c in enumerate(log) if c.startswith("gh issue comment")))
+        self.assertNotIn(SWAP, log)
+
+    def test_fail_omits_run_link_without_env(self) -> None:
+        """With any of the run-URL parts empty, the comment has no link."""
+        proc = self.run_script(fail="git push", run_env={"GITHUB_RUN_ID": ""})
+        comment = next(c for c in self.log() if c.startswith("gh issue comment 7"))
+        self.assertEqual(proc.returncode, 1)
+        self.assertNotIn("actions/runs", comment)
+        self.assertNotIn("See ", comment)
+
+    def test_retry_after_partial_first_run(self) -> None:
+        """Remote branch at an earlier attempt's SHA and PR already open: leased push, no new PR."""
+        proc = self.run_script(remote_sha="def456", pr_url="https://github.com/o/r/pull/8")
+        log = self.log()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(self.push("def456"), log)
+        self.assertNotIn("--force", " ".join(c for c in log if c.startswith("git push")).replace("--force-with-lease", ""))
+        self.assertFalse([c for c in log if c.startswith("gh pr create")])
+        self.assertEqual(log[-2:], [LIST, SWAP])
+
+    def test_retry_refuses_foreign_branch_tip(self) -> None:
+        """A remote tip that doesn't descend from the base SHA is never overwritten."""
+        proc = self.run_script(remote_sha="def456", fail="git merge-base")
+        log = self.log()
+        self.assertFalse([c for c in log if c.startswith(("git push", "gh pr"))])
+        self.assert_failed_cleanly(proc, log)
+
+    def test_remote_branch_at_base_sha_is_pushed_with_lease(self) -> None:
+        """First run: the triage branch sits at the base SHA, so no ancestry check is needed."""
+        proc = self.run_script(remote_sha="abc123")
+        log = self.log()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(self.push("abc123"), log)
+        self.assertFalse([c for c in log if c.startswith("git merge-base")])
 
     def test_not_built_outcome_comments_and_flags_needs_human(self) -> None:
-        """A needs-human outcome posts Claude's explanation and does no git work."""
+        """A non-built outcome posts Claude's note, adds needs-human and keeps the ready label."""
         proc = self.run_script(outcome="needs-human")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        log = self.log()
-        self.assertFalse([c for c in log if c.startswith("git ")])
-        self.assertTrue([c for c in log if c.startswith("gh issue comment 7")])
-        self.assertIn("gh issue edit 7 --add-label needs-human", log)
+        self.assertEqual(self.log(), [VIEW, NEEDS_HUMAN, "gh issue comment 7 --body details"])
 
     def test_already_processed_is_a_noop(self) -> None:
-        """Without the ready label the script does nothing beyond consuming the confirm label."""
+        """Without the ready label the script only reads the labels."""
         proc = self.run_script(labels="bug")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertFalse([c for c in self.log() if c.startswith(("git ", "gh pr", "gh issue comment"))])
+        self.assertEqual(self.log(), [VIEW])
 
 
 if __name__ == "__main__":

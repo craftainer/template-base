@@ -43,9 +43,20 @@ jobs:
     outputs:
       has-key: ${{ steps.check.outputs.has-key }}
       plan-sha: ${{ steps.resolve-sha.outputs.sha }}
+    # Only this job consumes the label, so it needs nothing wider.
+    permissions:
+      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      # Consumes the confirm label first, so a failed or skipped run never
+      # leaves it stuck (`labeled` fires only when a label is added): the
+      # maintainer re-adds it to retry. Re-adding it during this run queues
+      # the next run under the concurrency group above.
+      - name: Consume the confirm label
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "enhancement:confirm"
       - id: check
         run: echo "has-key=${{ secrets.ANTHROPIC_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
       # Resolves the plan branch's tip as early as possible and pins the
@@ -186,9 +197,10 @@ jobs:
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "The automated run produced no result to apply (it failed before packaging one). See $RUN_URL. Re-add the confirm label to retry."
-          gh issue edit "$ISSUE_NUMBER" --add-label needs-human
+          gh issue edit "$ISSUE_NUMBER" --add-label needs-human || true
+          gh issue comment "$ISSUE_NUMBER" --body "No result artifact (missing or download error; download step: $DOWNLOAD_OUTCOME). The run likely failed before packaging one. See $RUN_URL. Re-add the confirm label to retry." || true
           exit 1
 
       - name: Apply result
@@ -197,24 +209,5 @@ jobs:
           .github/scripts/moderate_apply_result.sh \
             moderation-result \
             feature plan \
-            "enhancement:plan-ready" "enhancement:confirmed" "enhancement:built" "enhancement:confirm" \
+            "enhancement:plan-ready" "enhancement:built" \
             Closes
-
-  # Frees the confirm label whatever happened above (Claude job skipped or
-  # failed, apply never ran, ...): `labeled` fires only when the label is
-  # added, so a stuck label could never be re-added to retry. Its own job
-  # so the Claude job stays read-only and this one holds only issues: write.
-  release-confirm-label:
-    needs: [gate, build, apply]
-    if: ${{ always() && github.event.label.name == 'enhancement:confirm' }}
-    permissions:
-      issues: write
-    # renovate: datasource=github-runners depName=ubuntu
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 5
-    env:
-      GH_TOKEN: ${{ github.token }}
-      ISSUE_NUMBER: ${{ github.event.issue.number }}
-    steps:
-      - name: Remove the confirm label
-        run: gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "enhancement:confirm"

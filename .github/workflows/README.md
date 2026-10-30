@@ -130,13 +130,36 @@ credentials would otherwise trip on CodeQL's
 outcome comment) and is skipped when the first job was (no API key,
 untrusted issue, stage label missing). If the artifact is missing
 (the first job died before packaging), `apply` comments on the issue,
-adds `needs-human` and fails. `apply` moves the stage label forward
-(`*-ready` to `*-confirmed` to `fixed`/`built`) only after the PR exists;
-on a failed push or PR it keeps `*-ready`, comments and adds
-`needs-human`. A final `release-confirm-label` job (`issues: write`
-only, `if: always()`) removes the confirm label however the run ended,
-because `labeled` fires only when a label is added and a stuck label
-could never be re-added to retry. The workflow shares the
+adds `needs-human` and fails; the message reads "no result artifact
+(missing or download error)" and names the download step's outcome.
+
+**The label is consumed at the start, and every apply step is
+re-runnable.** The `gate` job (`issues: write` only) removes the confirm
+label as the run starts, so a failed or skipped run never leaves it stuck
+(`labeled` fires only when a label is added) and a maintainer retries by
+adding it again. Re-adding it while a run is in flight queues the next run
+under the concurrency group. `apply` is idempotent, so that retry is safe
+after a partial first run:
+
+- The branch (`<bug|feature>/<n>-<repro|plan>`) is bot-owned: triage's
+  Claude run creates it and only `apply` writes to it afterwards. A
+  retry's `git am` makes new SHAs, so `apply` pushes with
+  `--force-with-lease=<branch>:<tip read from the remote>`: it fails if
+  anyone pushed in between, and it refuses to overwrite a tip that is not
+  the base SHA or a descendant of it (foreign work).
+- An open PR for the branch (`gh pr list --head`) is reused, never
+  duplicated.
+- The stage label swaps in one `gh issue edit` (`*-ready` to
+  `fixed`/`built`; `*-confirmed` is no longer applied) after the PR
+  exists, inside the same failure handling. On any failure the stage stays
+  `*-ready`; the issue gets `needs-human` first, then a best-effort
+  comment (with the run link only when `GITHUB_SERVER_URL`,
+  `GITHUB_REPOSITORY` and `GITHUB_RUN_ID` are all set), and the job fails.
+- A non-built outcome (Claude could not converge) posts its note and adds
+  `needs-human` but keeps `*-ready` on purpose: a maintainer's retry
+  re-runs the build, which spends API budget again.
+
+The workflow shares the
 per-issue concurrency group with the other moderation workflows when the
 confirm label is what triggered it; any other label event gets a
 throwaway group so it can't displace a queued confirm run. Known and
@@ -168,13 +191,13 @@ Two independent label sequences track state, applied by `gh issue edit`
 inside each stage's Claude prompt (`../scripts/prompts/`) or by a
 deterministic workflow step:
 
-- Bug: `bug` → (`bug:needs-info` | `bug:repro-ready`) → `bug:confirmed`
-  → `bug:fixed`; a maintainer adds `bug:confirm` to move from
-  `bug:repro-ready` to `bug:confirmed` (the label is consumed).
+- Bug: `bug` → (`bug:needs-info` | `bug:repro-ready`) → `bug:fixed`; a maintainer adds `bug:confirm` to start the fix (the
+  label is consumed when the run starts).
 - Feature: `enhancement` → (`enhancement:not-a-fit` |
-  `enhancement:plan-ready`) → `enhancement:confirmed` →
-  `enhancement:built`; a maintainer adds `enhancement:confirm` to move
-  from `plan-ready` to `confirmed` (consumed).
+  `enhancement:plan-ready`) → `enhancement:built`; a maintainer adds
+  `enhancement:confirm` to start the build (consumed when the run starts).
+  The `*:confirmed` labels still exist (`moderate-setup.yml`) but the
+  pipeline no longer applies them.
 
 Either sequence can end at `needs-human` instead, if Claude can't
 reproduce the bug / can't get the fix passing checks / can't complete
