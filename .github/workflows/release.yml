@@ -15,6 +15,16 @@
 # existing release). A GitHub release can therefore exist for a version whose
 # `publish-packages` failed: re-run the failed jobs to finish publishing, and
 # do not delete the release.
+#
+# Default branch only: any user with write access can dispatch this workflow
+# on any branch, and `build` runs that branch's Makefile with `contents:
+# write`, `packages: write` and the registry secrets. So the `version` job
+# fails unless the dispatched ref is the default branch, every job that
+# holds write permissions or secrets (`build`, `release`, `publish-packages`)
+# is also gated by the same condition itself, and the release is tagged at
+# `github.sha`, which for a dispatch on the default branch is its tip.
+# (Anyone who wants this enforced server-side too can add a deployment
+# branch rule on an environment; the check here needs no repository setting.)
 name: Release
 
 on:
@@ -56,6 +66,17 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
       arches: ${{ steps.arches.outputs.arches }}
     steps:
+      # First step, before anything is checked out or run from the ref.
+      - name: Refuse to release from a non-default branch
+        env:
+          REF: ${{ github.ref }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$REF" != "$DEFAULT_REF" ]; then
+            echo "::error::Release runs only from the default branch ($DEFAULT_REF); this run is on $REF."
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,6 +100,7 @@ jobs:
 
   build:
     needs: version
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     strategy:
       fail-fast: false
       matrix:
@@ -253,6 +275,7 @@ jobs:
 
   release:
     needs: [version, release-check]
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     # Two runs for the same tag (a double dispatch, or a re-run beside a
     # newer run) must not race on the draft deletion, finalize and release
     # creation below: the second waits and then sees the published release
@@ -376,7 +399,7 @@ jobs:
   # uploads exactly what `make build` produced.
   publish-packages:
     needs: [version, release]
-    if: ${{ vars.PYPI_PUBLISH != '' || vars.NPM_PUBLISH != '' || vars.CARGO_PUBLISH != '' }}
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (vars.PYPI_PUBLISH != '' || vars.NPM_PUBLISH != '' || vars.CARGO_PUBLISH != '') }}
     permissions:
       contents: read
       id-token: write

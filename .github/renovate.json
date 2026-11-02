@@ -13,7 +13,18 @@
     {
       "matchUpdateTypes": ["patch", "minor"],
       "groupName": "patch and minor updates",
-      "automerge": true
+      "automerge": true,
+      "description": "Automerged updates wait 3 days after release (the age Renovate's own security:minimumReleaseAgeNpm preset uses), so a hijacked release is usually yanked or flagged before it lands in main. internalChecksFilter strict is the docs' recommendation with minimumReleaseAge: a still-pending version is skipped, not merged.",
+      "minimumReleaseAge": "3 days",
+      "internalChecksFilter": "strict"
+    },
+    {
+      "description": "The python-version datasource has no release timestamps, so under the default minimumReleaseAgeBehaviour (timestamp-required) a Python patch would stay pending forever. It is raised without the age check and, since nothing vouches for its age, is not automerged.",
+      "matchDatasources": ["python-version"],
+      "matchDepNames": ["python"],
+      "groupName": "python patch",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "automerge": false
     },
     {
       "matchUpdateTypes": ["major"],

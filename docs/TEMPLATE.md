@@ -167,6 +167,69 @@ already establishes for `ruff`/`mypy`/`pytest`/`pip-audit`.
   triggers with a label trigger and in-workflow jobs). Don't suppress an
   audit to get green.
 
+### Supply chain and release hardening
+
+Findings from the OWASP review (A03/A08), and what each now does:
+
+- **Release runs only from the default branch.** `release.yml`'s first
+  step fails unless `github.ref` is `refs/heads/<default branch>`, and
+  `build`, `release` and `publish-packages` (the jobs holding `contents:
+  write`, `packages: write`, the OIDC token or registry secrets) repeat
+  the check as a job-level `if:`. A dispatch on any other branch can no
+  longer run that branch's Makefile with those permissions. The tag and
+  release target `github.sha`, which for a dispatch on the default branch
+  is its tip. Instances get this through template sync.
+  GitHub's [events documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
+  defines `GITHUB_REF` for a dispatch as the "branch or tag that received
+  dispatch", so the check has to be explicit; the
+  [secure-use guide](https://docs.github.com/en/actions/reference/security/secure-use)
+  asks for the least privilege `GITHUB_TOKEN` and warns that anyone with
+  write access can read repository secrets.
+- **Renovate waits 3 days before automerging.** The "patch and minor
+  updates" group sets `minimumReleaseAge: "3 days"` (the age Renovate's
+  own `security:minimumReleaseAgeNpm` preset uses) with
+  `internalChecksFilter: "strict"` (the
+  [documented recommendation](https://docs.renovatebot.com/key-concepts/minimum-release-age/)
+  alongside it), so a version still inside the window is skipped, not
+  merged. Which updates automerge is unchanged, except one: Renovate 42
+  holds an update without a release timestamp forever
+  (`minimumReleaseAgeBehaviour` defaults to `timestamp-required`), and the
+  `python-version` datasource has none, so Python patches are raised
+  as their own PR, without the age check, and are not automerged.
+  Digest-only updates (including the Dockerfile's base image) were never
+  in the automerged group.
+- **Installers are verified, not run blind.** `scripts/develop.sh` no
+  longer runs vendor install scripts. `uv` and `prek` are installed from
+  their release tarballs, checked against the `.sha256` file published
+  beside each asset; Claude Code's binary is checked against its
+  `manifest.json`, whose GPG signature is verified against the pinned
+  release-signing-key fingerprint (the vendor's
+  [documented verification](https://code.claude.com/docs/en/setup)). The
+  versions stay in the Dockerfile ARGs, so Renovate needs no new
+  manager. A checksum fetched from the same release as the file it
+  covers guards against a corrupted or swapped download, and against a
+  mirror or CDN serving something else; it does not help if the vendor's
+  release itself is compromised (the signed Claude Code manifest does
+  cover that). That is the same assurance node, `snip` and `gh` already
+  had. Bumping the signing key is a manual edit of `claude_signing_fpr`
+  when Anthropic rotates it.
+- **The devcontainer base image and Dockerfile frontend are pinned by
+  digest.** `.devcontainer/Dockerfile` has `FROM
+  mcr.microsoft.com/devcontainers/base:trixie@sha256:...` and a pinned
+  `# syntax=` line, both written literally (the former `DEBIAN_VERSION`
+  ARG is gone), so Renovate's `dockerfile` manager can keep tag and digest
+  together. To move to another Debian release, change the tag; Renovate
+  re-pins the digest.
+- **Accepted (Low): the MCP server's transitive dependencies.**
+  `.mcp.json` pins `@waldzellai/clear-thought-onepointfive` to an exact
+  version, but `npx` has no lockfile support, the package ships no
+  `npm-shrinkwrap.json`, and its own dependencies are ranges (`zod`,
+  `marked`, `@modelcontextprotocol/sdk`, ...). Those resolve at each
+  session start in the credentialed devcontainer. Mitigations are the
+  exact top-level pin, Renovate bumping it, and the 3-day age gate on
+  that bump; the transitive set is not pinned. An instance that wants it
+  pinned vendors the server (a lockfile and `npm ci`) instead.
+
 Run everything at once with:
 
 ```bash
