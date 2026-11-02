@@ -28,11 +28,13 @@ case "$kind" in
     prefix=bug suffix=repro
     declare -A label_for=([needs-info]="bug:needs-info" [repro-ready]="bug:repro-ready" [cannot-reproduce]="needs-human")
     branch_action=repro-ready
+    only_prefix=
     ;;
   feature)
     prefix=feature suffix=plan
     declare -A label_for=([not-a-fit]="enhancement:not-a-fit" [plan-ready]="enhancement:plan-ready" [cannot-plan]="needs-human")
     branch_action=plan-ready
+    only_prefix=docs/plans/
     ;;
   *)
     echo "::error::unknown kind '$kind' (expected 'bug' or 'feature')" >&2
@@ -41,28 +43,37 @@ case "$kind" in
 esac
 
 meta="$result_dir/meta.json"
-issue_number="$(jq -r '.issue_number' "$meta")"
-if ! [[ "$issue_number" =~ ^[0-9]+$ ]]; then
-  echo "::error::issue_number in meta.json isn't numeric: $issue_number" >&2
-  exit 1
-fi
-if [ -n "${ISSUE_NUMBER:-}" ] && [ "$issue_number" != "$ISSUE_NUMBER" ]; then
-  echo "::error::issue_number in meta.json ($issue_number) is not this run's issue ($ISSUE_NUMBER)" >&2
-  exit 1
-fi
-branch="$prefix/$issue_number-$suffix"
 
 # Failure path: needs-human first (the signal that matters), then a
 # best-effort comment. The run link only appears when all of its parts exist.
+# Targets $issue_number, which is this run's issue (ISSUE_NUMBER) until the
+# artifact's own number has been validated against it.
+issue_number="${ISSUE_NUMBER:-}"
 fail() {
-  gh issue edit "$issue_number" --add-label "needs-human" || true
-  local run_url=""
-  if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
-    run_url=" See $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+  if [ -n "$issue_number" ]; then
+    gh issue edit "$issue_number" --add-label "needs-human" || true
+    local run_url=""
+    if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
+      run_url=" See $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+    fi
+    gh issue comment "$issue_number" --body "$1$run_url Reopen the issue to restart triage." || true
   fi
-  gh issue comment "$issue_number" --body "$1$run_url Reopen the issue to restart triage." || true
   exit 1
 }
+
+# The artifact is untrusted data: a missing or malformed meta.json, or one
+# for another issue, is refused loudly. The fixed message never echoes it.
+meta_issue="$(jq -r '.issue_number' "$meta")" || meta_issue=""
+if ! [[ "$meta_issue" =~ ^[0-9]+$ ]]; then
+  echo "::error::meta.json is missing, malformed, or its issue_number isn't numeric" >&2
+  fail "Automated triage produced an unreadable result."
+fi
+if [ -n "$issue_number" ] && [ "$meta_issue" != "$issue_number" ]; then
+  echo "::error::issue_number in meta.json ($meta_issue) is not this run's issue ($issue_number)" >&2
+  fail "Automated triage produced a result for a different issue."
+fi
+issue_number="$meta_issue"
+branch="$prefix/$issue_number-$suffix"
 
 action="$(jq -r '(.action // "") | tostring' "$meta")"
 # Claude's words are posted as text: capped, and `@` broken so it cannot ping.
@@ -103,7 +114,7 @@ apply_branch() {
   git fetch --depth=1 -- origin "$base_sha" || return 1
   git checkout -B "$branch" FETCH_HEAD -- || return 1
   git am -- "$patch" || return 1
-  check_result_tree "$base_sha" || return 1
+  check_result_tree "$base_sha" "$only_prefix" || return 1
   git push --force-with-lease="$branch:$remote_sha" -- origin "$branch" || return 1
 }
 

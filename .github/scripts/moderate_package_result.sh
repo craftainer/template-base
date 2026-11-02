@@ -42,8 +42,8 @@ git init -q --bare "$safe"
 commits=0
 if is_sha "$base_sha" \
   && git --git-dir="$safe" -c protocol.file.allow=always fetch -q --no-tags --no-write-fetch-head \
-    -- "$workspace" "+HEAD:refs/heads/result" 2> /dev/null \
-  && git --git-dir="$safe" merge-base --is-ancestor "$base_sha" refs/heads/result 2> /dev/null; then
+    -- "$workspace" "+HEAD:refs/heads/result" \
+  && git --git-dir="$safe" merge-base --is-ancestor "$base_sha" refs/heads/result; then
   commits="$(git --git-dir="$safe" rev-list --count "$base_sha..refs/heads/result")"
 fi
 

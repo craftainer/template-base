@@ -127,7 +127,8 @@ class ApplyTriageTest(unittest.TestCase):
 
     def test_feature_plan_ready(self) -> None:
         """The feature kind uses its own branch and label."""
-        proc = self.run_script("plan-ready", kind="feature")
+        diff = ":100644 100644 a b A\\0docs/plans/2026-11-x.md\\0"
+        proc = self.run_script("plan-ready", kind="feature", run_env={"FAKE_DIFF": diff})
         self.assertEqual(proc.returncode, 0, proc.stderr)
         log = self.log()
         self.assertIn("git push --force-with-lease=feature/7-plan: -- origin feature/7-plan", log)
@@ -143,7 +144,9 @@ class ApplyTriageTest(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertEqual(log[0], NEEDS_HUMAN)
                 self.assertEqual(len(log), 2, log)
-                self.assertTrue(log[1].startswith("gh issue comment 7 --body Automated triage ended"))
+                self.assertTrue(
+                    log[1].startswith("gh issue comment 7 --body Automated triage ended")
+                )
 
     def test_result_labels_are_ignored(self) -> None:
         """Only the fixed table decides the label; a label field in the result is never read."""
@@ -204,10 +207,62 @@ class ApplyTriageTest(unittest.TestCase):
         self.assertNotIn("@octocat", comment)
 
     def test_result_for_another_issue_is_refused(self) -> None:
-        """An artifact for a different issue changes nothing."""
+        """An artifact for a different issue changes nothing on it; this run's issue gets needs-human."""
         proc = self.run_script("needs-info", run_env={"ISSUE_NUMBER": "8"})
         self.assertEqual(proc.returncode, 1)
-        self.assertEqual(self.log(), [])
+        log = self.log()
+        self.assertEqual(log[0], "gh issue edit 8 --add-label needs-human")
+        self.assertTrue(log[1].startswith("gh issue comment 8 --body "))
+        self.assertEqual(len(log), 2)
+
+    def test_unreadable_meta_flags_needs_human(self) -> None:
+        """A missing, malformed or non-numeric meta.json is loud, not silent."""
+        for body in (None, "not json", '{"issue_number": "7; x"}', "{}"):
+            with self.subTest(meta=body):
+                (self.tmp / "log.txt").unlink(missing_ok=True)
+                self.run_script("needs-info")
+                meta = self.result / "meta.json"
+                if body is None:
+                    meta.unlink()
+                else:
+                    meta.write_text(body)
+                (self.tmp / "log.txt").unlink(missing_ok=True)
+                env = {
+                    **os.environ,
+                    "PATH": f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                    "FAKE_LOG": str(self.tmp / "log.txt"),
+                    "GITHUB_REPOSITORY": "o/r",
+                    "DEFAULT_BRANCH": "main",
+                    "ISSUE_NUMBER": "7",
+                }
+                proc = subprocess.run(  # noqa: S603 -- fixed argv, trusted script
+                    [str(SCRIPTS / "moderate_apply_triage.sh"), "bug", str(self.result)],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                self.assertEqual(proc.returncode, 1, proc.stderr)
+                log = self.log()
+                self.assertEqual(log[0], NEEDS_HUMAN)
+                self.assertEqual(len(log), 2)
+
+    def test_plan_may_only_change_docs_plans(self) -> None:
+        """A plan touching anything outside docs/plans/ is never pushed."""
+        diff = ":100644 100644 a b M\\0docs/plans/x.md\\0:100644 100644 a b M\\0src/app.py\\0"
+        proc = self.run_script("plan-ready", kind="feature", run_env={"FAKE_DIFF": diff})
+        log = self.log()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("outside docs/plans/", proc.stderr)
+        self.assertFalse([c for c in log if c.startswith("git push")])
+        self.assertIn(NEEDS_HUMAN, log)
+        self.assertNotIn("gh issue edit 7 --add-label enhancement:plan-ready", log)
+
+    def test_repro_is_not_limited_to_docs_plans(self) -> None:
+        """The repro branch keeps only the deny-list (tests anywhere are fine)."""
+        proc = self.run_script("repro-ready")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":

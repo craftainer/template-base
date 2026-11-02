@@ -126,7 +126,9 @@ change is acted on without a check.
    `apply`. `Bash(prek run *)` becomes `prek run --config
    .moderation-tools/pre-commit-config.yaml *`, a copy of the default
    branch's config placed outside the tree Claude edits (and denied to its
-   edit tools). `MODERATION_EXTRA_TOOLS` is passed as an environment
+   edit tools). Only the config is trusted: hooks that call repository
+   scripts run the copies in the tree Claude edits, and the sandbox
+   (see the sandbox decision above) is the mitigation. `MODERATION_EXTRA_TOOLS` is passed as an environment
    variable, not spliced into the command line.
 4. **Claude never runs from its own tree.** Each Claude job snapshots the
    default branch with `git archive` into `$RUNNER_TEMP/trusted`, outside

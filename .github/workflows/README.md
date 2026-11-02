@@ -341,7 +341,10 @@ privileged work is elsewhere. Every Claude job gets `Read`, `Grep`, `Glob`,
   `config`, `push`, `remote`, `fetch`, `clone` or an alias.
 - `prek run --config .moderation-tools/pre-commit-config.yaml *` for
   triage-bug, fix and build: the hook configuration is the trusted copy,
-  not the tree's own `.pre-commit-config.yaml`.
+  not the tree's own `.pre-commit-config.yaml`. Only the config is
+  trusted: its `local`/`script` hooks run repository scripts from the tree
+  Claude edits, so those scripts are agent-editable and the sandbox, not
+  the config copy, is what contains them.
 - `gh issue view *` and `gh repo view *`, triage only (read-only token).
   No `gh issue comment`/`edit`, no `gh pr`, no `gh api`.
 

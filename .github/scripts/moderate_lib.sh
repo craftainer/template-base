@@ -29,9 +29,10 @@ is_ancestor() {
 
 # check_result_tree <base>: every path that differs between <base> and HEAD in
 # the current repository passes moderate_check_paths.sh, and none is a symlink
-# or a submodule. Prints the offenders to stderr.
+# or a submodule. Prints the offenders to stderr. With <only_prefix>, every
+# path must also start with it (the plan stage may change only docs/plans/).
 check_result_tree() {
-  local base="$1" tmp meta path mode bad=0
+  local base="$1" only_prefix="${2:-}" tmp meta path mode bad=0
   local -a paths=()
   tmp="$(mktemp)" || return 1
   if ! git diff --raw -z --no-renames "$base" HEAD -- > "$tmp"; then
@@ -48,6 +49,10 @@ check_result_tree() {
       *) ;;
     esac
     paths+=("$path")
+    if [ -n "$only_prefix" ] && [[ "$path" != "$only_prefix"* ]]; then
+      echo "::error::$path is outside $only_prefix, the only place this stage may change" >&2
+      bad=1
+    fi
   done < "$tmp"
   rm -f "$tmp"
   [ "$bad" = 0 ] || return 1

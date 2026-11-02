@@ -120,7 +120,7 @@
   `.moderation-out/`) and the size caps.
 - `moderate_check_paths.sh` — the path allow-list: reads NUL-separated
   paths on stdin and fails on any under `.github/`, `.devcontainer/`,
-  `.claude/`, a `Makefile`/`*.mk`, `Dockerfile*`, `compose*.y*ml`,
+  `.claude/`, a `Makefile`/`*.mk`, `Dockerfile*`, `compose*.y*ml`/`docker-compose*.y*ml`,
   `.pre-commit-config.yaml`, `scripts/release*` and the other files that
   decide what runs with credentials.
 - `moderate_prepare.sh` / `moderate_verify_branch.sh` — run on the runner
