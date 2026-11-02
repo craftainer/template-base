@@ -18,7 +18,8 @@ while IFS= read -r -d '' path; do
       Makefile | */Makefile | GNUmakefile | */GNUmakefile | makefile | */makefile | *.mk | \
       scripts/release* | scripts/develop.sh | scripts/post-create.sh | \
       scripts/develop.d/* | scripts/post-create.d/* | \
-      Dockerfile* | */Dockerfile* | compose*.yml | compose*.yaml | */compose*.yml | */compose*.yaml)
+      Dockerfile* | */Dockerfile* | dockerfile* | */dockerfile* | *.Dockerfile | *.dockerfile | \
+      compose*.y*ml | */compose*.y*ml | docker-compose*.y*ml | */docker-compose*.y*ml)
       echo "::error::denied path: $path" >&2
       denied=1
       ;;
