@@ -114,8 +114,8 @@ class ApplyTriageTest(unittest.TestCase):
         self.assertEqual(
             self.log(),
             [
-                f"git ls-remote -- origin refs/heads/{branch}",
                 f"gh api repos/o/r/compare/{BASE}...main --jq .status",
+                f"git ls-remote -- origin refs/heads/{branch}",
                 *setup_calls(branch, self.result),
                 f"git push --force-with-lease={branch}: -- origin {branch}",
                 "gh issue comment 7 --body looks reproducible",
