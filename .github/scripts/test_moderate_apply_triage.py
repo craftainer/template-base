@@ -45,6 +45,8 @@ class ApplyTriageTest(unittest.TestCase):
             exe.chmod(0o755)
         self.result = self.tmp / "result"
         self.result.mkdir()
+        # The fake `git am` never reads it, but the script requires one to exist.
+        (self.result / "patch.diff").write_text("")
 
     def run_script(
         self,
