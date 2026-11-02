@@ -175,8 +175,12 @@ Findings from the OWASP review (A03/A08), and what each now does:
   step fails unless `github.ref` is `refs/heads/<default branch>`, and
   `build`, `release` and `publish-packages` (the jobs holding `contents:
   write`, `packages: write`, the OIDC token or registry secrets) repeat
-  the check as a job-level `if:`. A dispatch on any other branch can no
-  longer run that branch's Makefile with those permissions. The tag and
+  the check as a job-level `if:`. This stops an accidental dispatch from another branch, but
+  it is not a security boundary: GitHub runs the workflow file from the
+  dispatched ref, so a writer can delete the checks on their own branch.
+  To enforce it, hold the registry secrets in an environment whose
+  deployment branches are limited to the default branch (or use a
+  ruleset). The tag and
   release target `github.sha`, which for a dispatch on the default branch
   is its tip. Instances get this through template sync.
   GitHub's [events documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
@@ -188,14 +192,15 @@ Findings from the OWASP review (A03/A08), and what each now does:
 - **Renovate waits 3 days before automerging.** The "patch and minor
   updates" group sets `minimumReleaseAge: "3 days"` (the age Renovate's
   own `security:minimumReleaseAgeNpm` preset uses) with
-  `internalChecksFilter: "strict"` (the
+  a top-level `internalChecksFilter: "strict"` (the
   [documented recommendation](https://docs.renovatebot.com/key-concepts/minimum-release-age/)
   alongside it), so a version still inside the window is skipped, not
   merged. Which updates automerge is unchanged, except one: Renovate 42
   holds an update without a release timestamp forever
   (`minimumReleaseAgeBehaviour` defaults to `timestamp-required`), and the
-  `python-version` datasource has none, so Python patches are raised
-  as their own PR, without the age check, and are not automerged.
+  `python-version` and `github-runners` datasources have none, so Python
+  patches and runner image bumps are raised as their own PRs, without the
+  age check, and are not automerged.
   Digest-only updates (including the Dockerfile's base image) were never
   in the automerged group.
 - **Installers are verified, not run blind.** `scripts/develop.sh` no

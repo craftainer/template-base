@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import io
 import itertools
+import json
 import os
 import re
 import shutil
@@ -740,23 +741,148 @@ class DevelopScriptTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("verified", result.stdout)
 
+    @staticmethod
+    def gpg_key(home: Path, name: str) -> tuple[str, bytes]:
+        """Create a throwaway signing key in ``home``; return its fingerprint and armored public key."""
+        env = {**os.environ, "GNUPGHOME": str(home)}
+        base = ["gpg", "--batch", "--quiet", "--pinentry-mode", "loopback", "--passphrase", ""]
+        subprocess.run(  # noqa: S603 -- fixed argv
+            [
+                *base,
+                "--quick-generate-key",
+                f"{name} <{name}@example.invalid>",
+                "ed25519",
+                "sign",
+                "never",
+            ],
+            env=env,
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+        colons = subprocess.run(  # noqa: S603 -- fixed argv
+            ["gpg", "--batch", "--with-colons", "--list-keys", name],  # noqa: S607
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        ).stdout
+        fpr = next(line.split(":")[9] for line in colons.splitlines() if line.startswith("fpr"))
+        armored = subprocess.run(  # noqa: S603 -- fixed argv
+            ["gpg", "--batch", "--armor", "--export", name],  # noqa: S607
+            env=env,
+            check=True,
+            capture_output=True,
+            timeout=60,
+        ).stdout
+        return fpr, armored
+
+    def run_install_claude(
+        self,
+        *,
+        pin: str = "good",
+        signer: str = "good",
+        manifest_version: str = "1.2.3",
+        manifest_checksum: str | None = None,
+        binary: bytes = b"claude-binary",
+    ) -> subprocess.CompletedProcess[str]:
+        """Run ``install_claude`` against a fake ``curl`` serving a key, a manifest signed by ``signer``, and ``binary``.
+
+        ``pin`` and ``signer`` pick which of two throwaway keys (``good``,
+        ``other``) is the pinned fingerprint and which signs the manifest;
+        the served key is always ``good``.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            homes = {}
+            for name in ("good", "other"):
+                homes[name] = root / f"gh-{name}"
+                homes[name].mkdir(mode=0o700)
+            try:
+                keys = {name: self.gpg_key(homes[name], name) for name in homes}
+                if manifest_checksum is None:
+                    manifest_checksum = hashlib.sha256(b"claude-binary").hexdigest()
+                manifest = json.dumps(
+                    {
+                        "version": manifest_version,
+                        "platforms": {"linux-x64": {"checksum": manifest_checksum}},
+                    }
+                )
+                served = root / "served"
+                served.mkdir()
+                (served / "key.asc").write_bytes(keys["good"][1])
+                (served / "manifest.json").write_text(manifest)
+                (served / "claude").write_bytes(binary)
+                subprocess.run(  # noqa: S603 -- fixed argv
+                    [
+                        "gpg",
+                        "--batch",
+                        "--quiet",
+                        "--local-user",
+                        keys[signer][0],
+                        "--detach-sign",
+                        "-o",
+                        str(served / "manifest.json.sig"),
+                        str(served / "manifest.json"),
+                    ],  # noqa: S607
+                    env={**os.environ, "GNUPGHOME": str(homes[signer])},
+                    check=True,
+                    capture_output=True,
+                    timeout=60,
+                )
+            finally:
+                for home in homes.values():
+                    subprocess.run(  # noqa: S603 -- fixed argv
+                        ["gpgconf", "--homedir", str(home), "--kill", "all"],  # noqa: S607
+                        check=False,
+                        capture_output=True,
+                        timeout=30,
+                    )
+            curl_body = (
+                'while [ $# -gt 0 ]; do case "$1" in -o) out=$2;; http*) url=$1;; esac; shift; done\n'
+                f'name="${{url##*/}}"; [ "$name" = claude-code.asc ] && name=key.asc\n'
+                f'cp "{served}/$name" "$out"\n'
+            )
+            result, _ = self.run_bash(
+                ("tmp_path", "fetch", "install_claude"),
+                f"claude_signing_fpr={keys[pin][0]}\n"
+                "claude_release_base=https://example.invalid/releases\n"
+                "claude_key_url=https://example.invalid/claude-code.asc\n"
+                "sudo() { echo SUDO-RAN; }\n"
+                'tmp_path -d\ninstall_claude 1.2.3 linux-x64 /cfg "$tmp_result"\n',
+                curl_body,
+            )
+        return result
+
     @unittest.skipUnless(shutil.which("gpg") and shutil.which("jq"), "needs gpg and jq")
-    def test_install_claude_rejects_an_unexpected_signing_key(self) -> None:
-        """A key whose fingerprint is not the pinned one stops the install before any binary runs."""
-        curl_body = (
-            'while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\nprintf junk > "$out"\n'
-        )
-        result, _ = self.run_bash(
-            ("tmp_path", "fetch", "install_claude"),
-            "claude_signing_fpr=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE\n"
-            "claude_release_base=https://example.invalid/releases\n"
-            "claude_key_url=https://example.invalid/key.asc\n"
-            "sudo() { echo SUDO-RAN; }\n"
-            'tmp_path -d\ninstall_claude 1.2.3 linux-x64 TMP/cfg "$tmp_result"\n',
-            curl_body,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn("SUDO-RAN", result.stdout)
+    def test_install_claude_installs_a_verified_release(self) -> None:
+        """The control: a pinned key, a manifest it signed and a matching binary install."""
+        result = self.run_install_claude()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("SUDO-RAN", result.stdout)
+
+    @unittest.skipUnless(shutil.which("gpg") and shutil.which("jq"), "needs gpg and jq")
+    def test_install_claude_fails_closed(self) -> None:
+        """Each broken link in the chain stops the install before the binary is run."""
+        digest = hashlib.sha256(b"claude-binary").hexdigest()
+        cases = {
+            "served key is not the pinned fingerprint": ({"pin": "other"}, "fingerprint"),
+            "manifest signed by another key": ({"signer": "other"}, "not signed by"),
+            "manifest is for another version": ({"manifest_version": "9.9.9"}, "expected 1.2.3"),
+            "manifest checksum is not hex": ({"manifest_checksum": "zz" * 32}, "no valid checksum"),
+            "manifest checksum is too short": (
+                {"manifest_checksum": digest[:40]},
+                "no valid checksum",
+            ),
+            "binary does not match the manifest": ({"binary": b"tampered"}, "FAILED"),
+        }
+        for label, (kwargs, message) in cases.items():
+            with self.subTest(label):
+                result = self.run_install_claude(**kwargs)  # type: ignore[arg-type]
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("SUDO-RAN", result.stdout)
+                self.assertIn(message, result.stderr + result.stdout)
 
 
 class ReleaseWorkflowGuardTest(unittest.TestCase):

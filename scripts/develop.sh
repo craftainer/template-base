@@ -177,8 +177,11 @@ install_claude() {
     gpg --batch --quiet --homedir "$gnupg_home" --import "$key"
     fetch_label="Claude Code manifest" fetch "${claude_release_base}/${version}/manifest.json" -o "${dir}/manifest.json"
     fetch_label="Claude Code manifest signature" fetch "${claude_release_base}/${version}/manifest.json.sig" -o "${dir}/manifest.json.sig"
-    # A bad or missing signature makes gpg (and so the assignment) fail.
-    status="$(gpg --batch --homedir "$gnupg_home" --status-fd 1 --verify "${dir}/manifest.json.sig" "${dir}/manifest.json" 2> /dev/null)"
+    # A bad, missing or unknown-key signature makes gpg exit non-zero.
+    status="$(gpg --batch --homedir "$gnupg_home" --status-fd 1 --verify "${dir}/manifest.json.sig" "${dir}/manifest.json" 2> /dev/null)" || {
+        echo "Claude Code manifest is not signed by ${claude_signing_fpr}" >&2
+        return 1
+    }
     # VALIDSIG's 12th field is the signing key's primary fingerprint.
     printf '%s\n' "$status" |
         awk -v fpr="$claude_signing_fpr" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && $12 == fpr { ok = 1 } END { exit !ok }' || {
@@ -191,13 +194,7 @@ install_claude() {
         return 1
     fi
     checksum="$(jq -er --arg p "$platform" '.platforms[$p].checksum' "${dir}/manifest.json")"
-    case "$checksum" in
-        *[!0-9a-f]* | "")
-            echo "Claude Code manifest has no valid checksum for ${platform}" >&2
-            return 1
-            ;;
-    esac
-    if [ "${#checksum}" -ne 64 ]; then
+    if [[ ! $checksum =~ ^[0-9a-f]{64}$ ]]; then
         echo "Claude Code manifest has no valid checksum for ${platform}" >&2
         return 1
     fi

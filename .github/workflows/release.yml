@@ -23,8 +23,12 @@
 # holds write permissions or secrets (`build`, `release`, `publish-packages`)
 # is also gated by the same condition itself, and the release is tagged at
 # `github.sha`, which for a dispatch on the default branch is its tip.
-# (Anyone who wants this enforced server-side too can add a deployment
-# branch rule on an environment; the check here needs no repository setting.)
+# These guards stop an accidental dispatch from a feature branch, but they
+# are not a security boundary: GitHub runs this file from the dispatched
+# ref, so a writer can delete them on their own branch. Only a server-side
+# rule holds against that: put the registry secrets and the release in an
+# environment whose deployment branches are limited to the default branch
+# (or use a ruleset), and keep the check here as the fail-fast.
 name: Release
 
 on:
