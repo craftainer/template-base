@@ -25,10 +25,14 @@
 # `github.sha`, which for a dispatch on the default branch is its tip.
 # These guards stop an accidental dispatch from a feature branch, but they
 # are not a security boundary: GitHub runs this file from the dispatched
-# ref, so a writer can delete them on their own branch. Only a server-side
-# rule holds against that: put the registry secrets and the release in an
-# environment whose deployment branches are limited to the default branch
-# (or use a ruleset), and keep the check here as the fail-fast.
+# ref, so a writer can delete them on their own branch. The server-side
+# rule that holds against that is the `release` environment: `build`,
+# `release` and `publish-packages` declare `environment: release`, whose
+# deployment branches are limited to the default branch, and the registry
+# and npm secrets live in that environment (not at repository level), so
+# a run from another ref is refused the job and cannot read them. The
+# checks here stay as the fail-fast. Setup: docs/TEMPLATE.md, "Release
+# environment".
 name: Release
 
 on:
@@ -120,6 +124,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+    environment: release
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ matrix.arch == 'arm64' && (vars.CI_RUNNER_ARM64 || 'ubuntu-24.04-arm') || (vars.CI_RUNNER_AMD64 || 'ubuntu-24.04') }}
     env:
@@ -295,6 +300,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+    environment: release
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
@@ -407,6 +413,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    environment: release
     # renovate: datasource=github-runners depName=ubuntu
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     env:

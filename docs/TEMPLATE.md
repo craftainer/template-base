@@ -178,17 +178,46 @@ Findings from the OWASP review (A03/A08), and what each now does:
   the check as a job-level `if:`. This stops an accidental dispatch from another branch, but
   it is not a security boundary: GitHub runs the workflow file from the
   dispatched ref, so a writer can delete the checks on their own branch.
-  To enforce it, hold the registry secrets in an environment whose
-  deployment branches are limited to the default branch (or use a
-  ruleset). The tag and
-  release target `github.sha`, which for a dispatch on the default branch
-  is its tip. Instances get this through template sync.
+  The server-side rule is the `release` environment (next bullet).
+  The tag and release target `github.sha`, which for a dispatch on the
+  default branch is its tip. Instances get this through template sync.
   GitHub's [events documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
   defines `GITHUB_REF` for a dispatch as the "branch or tag that received
   dispatch", so the check has to be explicit; the
   [secure-use guide](https://docs.github.com/en/actions/reference/security/secure-use)
   asks for the least privilege `GITHUB_TOKEN` and warns that anyone with
   write access can read repository secrets.
+- **Release environment (setup step for each instance).** `release.yml`'s
+  `build`, `release` and `publish-packages` jobs declare `environment:
+  release`. An admin must configure it once per repository, **before the
+  first release that carries this workflow**: GitHub creates a
+  referenced-but-missing environment with no rules and no secrets, so an
+  unconfigured one protects nothing. Settings → Environments → `release`:
+  Deployment branches and tags → *Selected branches and tags* → add the
+  default branch (e.g. `main`) as a branch rule; or with the API,
+  `PUT repos/<owner>/<repo>/environments/release` with
+  `deployment_branch_policy: {protected_branches: false,
+  custom_branch_policies: true}`, then `POST
+  .../environments/release/deployment-branch-policies` with `name=<default
+  branch>` and `type=branch`. Then move the release secrets
+  (`OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, `NPM_TOKEN`,
+  `CARGO_REGISTRY_TOKEN`) from repository secrets into the environment
+  (`gh secret set NAME --env release`, then `gh secret delete NAME`). A run
+  from any other ref is then refused the privileged jobs and cannot read
+  them, even if the in-workflow default-branch check was deleted on that
+  branch. The `jobs.<id>.environment` secrets are read as `secrets.NAME`
+  exactly like repository secrets, so no step changes (an environment
+  secret overrides a repository one of the same name); repository
+  *variables* (`PYPI_PUBLISH`, `OCI_REGISTRY`, ...) stay as they are.
+  `release-check`, `verify-published` and `version` hold no write
+  permission or secret and do not use the environment. If the repository
+  is private it needs a plan that supports environments. Trusted
+  publishers (npm, PyPI, crates.io) have an optional *environment* field:
+  the OIDC token's subject now names the `release` environment, so leave
+  the field empty or set it to `release`; a different value cannot
+  match the token (npm does not say how it treats an empty field, and it
+  only reports a bad config when you publish). See the [GitHub documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+  and [npm's](https://docs.npmjs.com/trusted-publishers).
 - **Renovate waits 3 days before automerging.** The "patch and minor
   updates" group sets `minimumReleaseAge: "3 days"` (the age Renovate's
   own `security:minimumReleaseAgeNpm` preset uses) with
