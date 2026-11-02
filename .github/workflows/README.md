@@ -15,7 +15,10 @@
   arch-specific runtime break (e.g. a C-extension dependency missing an
   arm64 wheel), since `checks.yml`'s test run uses `MODE=mock`
   in-process fakes for some paths rather than the built image.
-- `release.yml` — manually triggered. Takes a release channel
+- `release.yml` — manually triggered, and only from the default branch:
+  the `version` job's first step fails on any other ref, and `build`,
+  `release` and `publish-packages` repeat the check in their own `if:`.
+  Takes a release channel
   (`alpha`/`beta`/`rc`/`full`) and a SemVer 2 bump
   (`major`/`minor`/`patch`/`none`), computes the next tag via
   `../scripts/compute_next_version.py`, then drives the instance's

@@ -62,7 +62,9 @@
   `has_make_target.sh` runs no recipe, but make still evaluates
   `$(shell ...)` and `include` while parsing the Makefile.
   `test_release_scripts.py` tests both, `verify_release_tag.sh`, and that
-  `../../scripts/develop.sh` never nests `fetch` inside `retry`;
+  `../../scripts/develop.sh` never nests `fetch` inside `retry`, verifies
+  downloads with `fetch_checked`/`install_claude`, and runs no installer script, and
+  that `release.yml` gates its privileged jobs on the default branch;
   `scripts-tests` runs it. Keep
   `assemble_dist.py` clean under `ruff check --select ALL` (bar `COM812` and
   `CPY001`), so instances that select `PL` etc. need no per-file ignores.
