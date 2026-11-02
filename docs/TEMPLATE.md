@@ -474,6 +474,17 @@ Further sync behaviour, detailed in `.github/scripts/README.md`:
 - The moderation `apply` jobs download the `moderation-result` artifact
   strictly, so a lost artifact fails the job instead of passing silently
   (see `.github/workflows/README.md`, "Issue moderation").
+- The issue-moderation workflows (`moderate-*.yml`) keep Claude read-only
+  and do every write in a separate `apply` job, now for triage as well as
+  fix/build (see `docs/adrs/0001-harden-the-issue-moderation-workflows.md`
+  in template-base and `.github/workflows/README.md`). What an instance
+  sees: `ANTHROPIC_API_KEY` is passed through the process environment only,
+  never `.secrets/claude.txt`; Claude's git and `gh` tools are narrowed, and
+  `MODERATION_EXTRA_TOOLS` is the way to add more; a fix or plan that
+  changes CI, devcontainer, hook, `Makefile`/`*.mk`, `Dockerfile*`,
+  `compose*.y*ml` or release files ends as a `needs-human` note instead of a
+  PR; and the PR base is the default branch. An instance whose Makefile or
+  hook configuration the agent needs to change does that by hand.
 - The scripts under `.github/scripts/` run on the runner's system `python3`.
   Base ships `.github/scripts/ruff.toml` (`replace` tier), pinned to that
   Python's `target-version`, and `test_script_syntax.py` guards it with
