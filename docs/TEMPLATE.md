@@ -212,11 +212,16 @@ Findings from the OWASP review (A03/A08), and what each now does:
   `release-check`, `verify-published` and `version` hold no write
   permission or secret and do not use the environment. If the repository
   is private it needs a plan that supports environments. Trusted
-  publishers (npm, PyPI, crates.io) have an optional *environment* field:
-  the OIDC token's subject now names the `release` environment, so leave
-  the field empty or set it to `release`; a different value cannot
-  match the token (npm does not say how it treats an empty field, and it
-  only reports a bad config when you publish). See the [GitHub documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+  publishers (npm, PyPI, crates.io) have an optional *environment* field,
+  and it must be set to `release`: that field is what binds publishing to
+  the environment, and without it a branch workflow with `id-token: write`
+  can still publish by OIDC. Set it once `release.yml` with the
+  environment is on the default branch. The registries only report a bad
+  config when you publish. Residual: a writer's branch workflow can
+  request `packages: write` itself, so the environment does not gate GHCR
+  pushes; mitigate with the package's GHCR Actions-access setting, pinning
+  consumed images and features by digest, and an org ruleset requiring
+  review for `.github/workflows/**`. See the [GitHub documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
   and [npm's](https://docs.npmjs.com/trusted-publishers).
 - **Renovate waits 3 days before automerging.** The "patch and minor
   updates" group sets `minimumReleaseAge: "3 days"` (the age Renovate's
