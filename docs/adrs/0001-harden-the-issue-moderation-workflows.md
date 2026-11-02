@@ -77,6 +77,17 @@ ones.
   builds the list from `env`/`inheritEnv` and `devContainerExec` turns each
   entry into `--remote-env`; nothing else of the step's environment is
   forwarded).
+- Anthropic, Claude Code docs, "Sandboxing"
+  (<https://code.claude.com/docs/en/sandboxing.md>): `sandbox.enabled`,
+  `failIfUnavailable` (fail closed), `allowUnsandboxedCommands`,
+  `autoAllowBashIfSandboxed` (default true), `network.allowedDomains` /
+  `strictAllowlist`, `filesystem.denyRead` / `allowWrite`,
+  `credentials.envVars` (`deny` unsets a variable in every sandboxed
+  command), Linux dependencies `bubblewrap` and `socat`, and that in an
+  unprivileged container bubblewrap cannot mount a fresh `/proc` unless
+  `enableWeakerNestedSandbox` bind-mounts the container's own, "which
+  exposes process information"; the sandbox covers Bash and its children,
+  not the Read/Edit/Write tools.
 - The OWASP review reports (`OW-template-base`, `OW-.github`, 2026-11-01).
 
 ## Decision
@@ -99,6 +110,14 @@ change is acted on without a check.
    out of Bash, hooks and MCP children, and an inline `--settings` deny
    list blocks `Read(//proc/**)` (and `/sys`, `~/.claude`, `~/.config/gh`).
    The same `with: env:` fix gives triage its read-only `GH_TOKEN`.
+   Claude Code's built-in sandbox wraps every Bash command and what it
+   starts (prek hooks, tests, code the agent wrote): filesystem
+   isolation, a network allow-list (`github.com` and, for triage,
+   `api.github.com`, plus an optional repository variable), the key unset in
+   every sandboxed command. `failIfUnavailable: true` and
+   `allowUnsandboxedCommands: false` make it fail closed, and
+   `enableWeakerNestedSandbox` is not set (it would expose the container's
+   `/proc`). The image gains `bubblewrap` and `socat`.
 3. **Narrow tool allow-list.** `Bash(git *)` becomes the local subcommands
    Claude needs (`status`, `diff`, `log`, `show`, `add`, `commit`, `restore`,
    `rm`, `mv`, `ls-files`, `rev-parse`, and for triage `checkout -b` /
@@ -139,32 +158,35 @@ change is acted on without a check.
   PR. Its reachable credentials are a spend-limited API key and a read-only
   token on a public repository's contents and issues. Its output is
   checked before it touches the repository.
-- **Residual risk (open):** Claude can write a test or hook and run it
-  through `prek`. That code runs as the same user as `claude` and can read
-  the claude process's `/proc/<pid>/environ` and reach the network, so it
-  can read the key. The deny rule and the env scrub stop Claude's own
-  tools, not code it authors. The cap on this is the key's own scope (a
-  dedicated Anthropic workspace with a monthly limit and a usage alert).
-  Options to close it, none verified here because the repository has no key
-  and no run: run the agent's tests in a second, key-less step; run `claude`
-  under a different uid than the commands it starts; or use Claude Code's
-  own sandbox inside the privileged devcontainer. Choosing one is a
-  maintainer decision.
+- **Sandbox, unverified until a real run.** The residual risk of agent-run
+  code reading the claude process's environment is addressed by the sandbox
+  (user decision 2026-11-02, over a key-less second step or a separate uid).
+  Nothing here has run: the repository has no key, and the docs do not say
+  whether bubblewrap works inside the privileged devcontainer on a
+  GitHub-hosted runner, nor spell out the PID-namespace behaviour that would
+  hide `/proc/<claude pid>/environ`. If bubblewrap cannot start, every
+  Claude step fails and the issue becomes `needs-human`; the pipeline then
+  stays unusable until the sandbox works rather than run without it. The
+  scratch-repo procedure in the pull request checks both properties. The
+  sandbox does not cover the file tools (the `permissions.deny` rules do),
+  hooks or MCP servers. `github.com` stays reachable, so data sent there is
+  not blocked, but without a write token in the fix/build jobs and with a
+  read-only one in triage, nobody can retrieve it.
+- Accepted residual risks: the devcontainer build for fix/build reads the
+  branch's own `.devcontainer/`, verified equal to the default branch only at
+  the merge base, not at its tip (an older, formerly trusted version may
+  build); the live issue text is read at run time, so text edited after a
+  maintainer's review is still seen (the confirm label pins the branch tip,
+  not the issue text).
 - Some legitimate fixes become `needs-human` notes: any change to CI,
   Makefiles, Dockerfiles, compose files, release or devcontainer scripts. The
   list is intentionally larger than the three named in the review; shrinking
   it is a one-line change in `moderate_check_paths.sh`.
+- The wide deny-list is a deliberate decision (user, 2026-11-02).
 - The base for a fix is the repro tip, which is not an ancestor of the
   default branch. The review asked for an ancestor-of-default check; `apply`
   applies it to triage and to a fix whose bot branch has been deleted, and
   checks "ancestor of the bot branch's tip" otherwise.
-- The devcontainer build for fix/build still reads the branch's own
-  `.devcontainer/`. The verify step makes that equal the default branch's
-  at the merge base, not at its tip; if the default branch changed it since,
-  the older (formerly trusted) version builds.
-- The live issue text is read at run time (`gh issue view`), so text edited
-  after a maintainer's review is still seen. The maintainer's confirm label
-  pins the branch tip, not the issue text.
 - Instances inherit all of it through the replace-tier `.github/scripts/`
   and the moderation workflows. An instance that set `MODERATION_EXTRA_TOOLS`
   keeps working; one that edited a moderation workflow resolves a merge by

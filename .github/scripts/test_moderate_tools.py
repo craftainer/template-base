@@ -258,7 +258,13 @@ class RunClaudeTest(unittest.TestCase):
 
     def test_key_only_from_the_environment(self) -> None:
         """The key reaches claude, the call is hardened, and no key file is involved."""
-        proc = self.launch({"ANTHROPIC_API_KEY": "sk-test", "MODERATION_EXTRA_TOOLS": "Bash(uv run pytest *)"})
+        proc = self.launch(
+            {
+                "ANTHROPIC_API_KEY": "sk-test",
+                "MODERATION_EXTRA_TOOLS": "Bash(uv run pytest *)",
+                "MODERATION_ALLOWED_DOMAINS": "github.com,api.github.com",
+            }
+        )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         lines = self.out.read_text().splitlines()
         self.assertIn("KEY:sk-test", lines)
@@ -267,11 +273,28 @@ class RunClaudeTest(unittest.TestCase):
         self.assertEqual(lines[lines.index("ARG:--allowedTools") + 1], "ARG:Read,Grep,Bash(uv run pytest *)")
         settings = json.loads(lines[lines.index("ARG:--settings") + 1].removeprefix("ARG:"))
         self.assertIn("Read(//proc/**)", settings["permissions"]["deny"])
+        sandbox = settings["sandbox"]
+        self.assertIs(sandbox["enabled"], True)
+        self.assertIs(sandbox["failIfUnavailable"], True)
+        self.assertIs(sandbox["allowUnsandboxedCommands"], False)
+        self.assertIs(sandbox["autoAllowBashIfSandboxed"], False)
+        self.assertNotIn("enableWeakerNestedSandbox", sandbox)
+        self.assertEqual(sandbox["network"]["allowedDomains"], ["github.com", "api.github.com"])
+        self.assertIs(sandbox["network"]["strictAllowlist"], True)
+        self.assertIn({"name": "ANTHROPIC_API_KEY", "mode": "deny"}, sandbox["credentials"]["envVars"])
         self.assertEqual(lines[lines.index("ARG:-p") + 1], "ARG:do the thing")
+
+    def test_missing_or_bad_domains_fail_before_claude_runs(self) -> None:
+        """No network allow-list, or a malformed host, means claude never starts."""
+        for domains in ("", ",", 'x.com","evil', "a b"):
+            with self.subTest(domains=domains):
+                proc = self.launch({"ANTHROPIC_API_KEY": "k", "MODERATION_ALLOWED_DOMAINS": domains})
+                self.assertEqual(proc.returncode, 1)
+                self.assertFalse(self.out.exists())
 
     def test_missing_key_fails_before_claude_runs(self) -> None:
         """Without the key in the environment the launcher stops; claude is never started."""
-        proc = self.launch({})
+        proc = self.launch({"MODERATION_ALLOWED_DOMAINS": "github.com"})
         self.assertEqual(proc.returncode, 1)
         self.assertFalse(self.out.exists())
 

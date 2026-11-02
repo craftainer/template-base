@@ -46,12 +46,44 @@ export GIT_COMMITTER_EMAIL="claude-moderator[bot]@users.noreply.github.com"
 # commands, hooks, MCP servers); only claude itself keeps the key.
 export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1
 
-# Deny rules outrank every allow rule. They keep the file tools away from the
-# process environment (/proc/<pid>/environ holds the key), from this tooling
-# directory and from .git. `--settings` is the command-line level of Claude
-# Code's settings precedence, above the project's own .claude/settings*.json,
-# and is passed inline so there is no file for the agent to edit mid-run.
-settings='{"permissions":{"deny":["Read(//proc/**)","Read(//sys/**)","Read(~/.claude/**)","Read(~/.config/gh/**)","Edit(./.moderation-tools/**)","Edit(./.git/**)"]}}'
+# Network allow-list for the sandbox below: comma-separated hosts, set by the
+# workflow (github.com/api.github.com for triage's `gh issue view`, github.com
+# for prek's hook-repo clones, plus the optional MODERATION_EXTRA_DOMAINS
+# repository variable). The Anthropic API is not on it: claude itself is not
+# sandboxed, only the commands it starts.
+domains_json=""
+IFS=',' read -ra domains <<< "${MODERATION_ALLOWED_DOMAINS:-}"
+for d in "${domains[@]}"; do
+  [ -n "$d" ] || continue
+  [[ "$d" =~ ^[A-Za-z0-9*.-]+$ ]] || { echo "::error::bad domain '$d' in MODERATION_ALLOWED_DOMAINS" >&2; exit 1; }
+  domains_json="$domains_json${domains_json:+,}\"$d\""
+done
+[ -n "$domains_json" ] || { echo "::error::MODERATION_ALLOWED_DOMAINS is empty" >&2; exit 1; }
+
+# Inline `--settings` is the command-line level of Claude Code's settings
+# precedence, above the project's own .claude/settings*.json, and leaves no
+# file for the agent to edit mid-run.
+#
+# permissions.deny outranks every allow rule and keeps the FILE tools (which
+# the sandbox does not cover) away from the process environment
+# (/proc/<pid>/environ holds the key), this tooling directory and .git.
+#
+# sandbox: Claude Code's built-in sandbox (bubblewrap + socat on Linux) wraps
+# every Bash command and the processes it starts -- prek hooks, tests, code the
+# agent wrote. failIfUnavailable makes claude exit at startup when it cannot
+# start, and allowUnsandboxedCommands=false removes the retry-outside-the-
+# sandbox escape, so a runner or container that cannot sandbox fails closed
+# instead of running unsandboxed. enableWeakerNestedSandbox is deliberately NOT
+# set: it would bind-mount the container's /proc, exposing the claude process's
+# environment. autoAllowBashIfSandboxed=false keeps --allowedTools in force for
+# Bash. Network is limited to the allow-list above (strictAllowlist: refuse,
+# do not prompt); the key is unset in every sandboxed command, and the
+# credential locations of the container user are unreadable.
+settings='{"permissions":{"deny":["Read(//proc/**)","Read(//sys/**)","Read(~/.claude/**)","Read(~/.config/gh/**)","Edit(./.moderation-tools/**)","Edit(./.git/**)"]},'
+settings="$settings"'"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"autoAllowBashIfSandboxed":false,'
+settings="$settings"'"network":{"allowedDomains":['"$domains_json"'],"strictAllowlist":true},'
+settings="$settings"'"filesystem":{"allowWrite":["~/.cache"],"denyRead":["~/.claude","~/.config/gh","~/.ssh","~/.aws","~/.netrc","~/.git-credentials"]},'
+settings="$settings"'"credentials":{"envVars":[{"name":"ANTHROPIC_API_KEY","mode":"deny"}]}}}'
 
 timeout "${timeout_seconds}s" claude -p "$(cat "$prompt_file")" \
   --model claude-sonnet-5 \

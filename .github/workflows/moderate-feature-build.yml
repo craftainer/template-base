@@ -150,6 +150,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MODERATION_EXTRA_TOOLS: ${{ vars.MODERATION_EXTRA_TOOLS }}
+          # Hosts the sandbox lets Claude's commands reach (everything else is refused).
+          MODERATION_ALLOWED_DOMAINS: github.com${{ vars.MODERATION_EXTRA_DOMAINS && format(',{0}', vars.MODERATION_EXTRA_DOMAINS) || '' }}
         with:
           runCmd: >-
             .moderation-tools/run_claude.sh
@@ -159,6 +161,7 @@ jobs:
           env: |
             ANTHROPIC_API_KEY
             MODERATION_EXTRA_TOOLS
+            MODERATION_ALLOWED_DOMAINS
             GITHUB_ISSUE_NUMBER
 
       # Always packages/uploads, even if Claude's step above failed or

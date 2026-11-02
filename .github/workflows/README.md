@@ -304,7 +304,7 @@ of applying the new result, not in the read-only Claude job.
 stage) via `devcontainers/ci`, so Claude runs the exact CLI build pinned
 in `.devcontainer/Dockerfile`'s `CLAUDE_CODE_VERSION`. The
 `ANTHROPIC_API_KEY` secret is never written to a file: the step lists it
-(and `MODERATION_EXTRA_TOOLS`, `GITHUB_ISSUE_NUMBER` and, for triage,
+(and `MODERATION_EXTRA_TOOLS`, `MODERATION_ALLOWED_DOMAINS`, `GITHUB_ISSUE_NUMBER` and, for triage,
 `GH_TOKEN`) under `with: env:`, which `devcontainers/ci` hands to
 `devcontainer exec --remote-env`, so it exists only in the environment of
 the one `run_claude.sh` command. **A step-level `env:` alone does not reach
@@ -354,13 +354,33 @@ to each Claude job's tool list and never applies to the `apply` jobs,
 which don't run Claude. Whatever it adds widens what a prompt injection
 can do inside the job, so treat it like the API key's scope.
 
-**Residual risk.** Code that Claude writes and then runs through `prek`
-(a test, a hook) executes as the same user as the `claude` process, with
-network access. Env scrubbing and the `/proc` deny rule stop the agent's
-own tools, but not that code reading `/proc/<pid>/environ`. The blast
-radius is the dedicated, spend-limited key, and nothing the job holds can
-write to the repository. See the ADR's "Consequences" for the options to
-close it.
+**Sandbox (fail closed).** Code Claude writes and then runs through `prek`
+(a test, a hook) would otherwise run as the same user as `claude`, with
+network access, and could read the claude process's environment.
+`run_claude.sh` therefore turns on Claude Code's built-in sandbox
+(<https://code.claude.com/docs/en/sandboxing.md>) through the inline
+`--settings`: `sandbox.enabled`, `failIfUnavailable: true` (claude exits at
+startup if bubblewrap cannot run), `allowUnsandboxedCommands: false` (no
+retry outside the sandbox), `autoAllowBashIfSandboxed: false` (the
+`--allowedTools` list still decides which Bash commands run),
+`network.allowedDomains` from `MODERATION_ALLOWED_DOMAINS` with
+`strictAllowlist: true` (triage: `github.com,api.github.com`, fix/build:
+`github.com`, plus the optional `MODERATION_EXTRA_DOMAINS` repository
+variable, e.g. a package registry), `credentials.envVars` denying
+`ANTHROPIC_API_KEY` in every sandboxed command, `filesystem.denyRead` for
+the container user's credential locations and `allowWrite` of `~/.cache`.
+`enableWeakerNestedSandbox` is deliberately not set: it would bind-mount the
+container's `/proc` and expose the claude process's environment. The
+sandbox covers Bash and what it starts, not the file tools, which the
+`permissions.deny` rules cover. The image installs `bubblewrap` and `socat`
+(`scripts/develop.sh`). If the devcontainer cannot create the sandbox
+(for example no user namespaces), the Claude step fails and the issue gets a
+`needs-human` note; moderation never runs unsandboxed. **Unverified until a
+real run:** this repository has no key, so whether bubblewrap works inside
+the devcontainer on a GitHub-hosted runner, and that the sandboxed commands
+cannot see the claude process's `/proc/<pid>/environ`, are checked only by
+the procedure in the pull request that introduced this (an agent-run
+command must fail to read that file and to reach an arbitrary host).
 
 A single `moderate-issue-<number>` `concurrency:` group, shared across
 the two triage workflows, the two worker (fix/build) workflows, and

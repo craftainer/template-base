@@ -483,7 +483,10 @@ Further sync behaviour, detailed in `.github/scripts/README.md`:
   `MODERATION_EXTRA_TOOLS` is the way to add more; a fix or plan that
   changes CI, devcontainer, hook, `Makefile`/`*.mk`, `Dockerfile*`,
   `compose*.y*ml` or release files ends as a `needs-human` note instead of a
-  PR; and the PR base is the default branch. An instance whose Makefile or
+  PR; and the PR base is the default branch. Claude's commands run in Claude
+  Code's sandbox (the image installs `bubblewrap` and `socat`) with a network
+  allow-list; `MODERATION_EXTRA_DOMAINS` adds hosts (e.g. a package
+  registry), and the pipeline fails closed if the sandbox cannot start. An instance whose Makefile or
   hook configuration the agent needs to change does that by hand.
 - The scripts under `.github/scripts/` run on the runner's system `python3`.
   Base ships `.github/scripts/ruff.toml` (`replace` tier), pinned to that
