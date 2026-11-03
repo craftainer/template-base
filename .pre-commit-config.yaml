@@ -48,6 +48,25 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
+  # Guard for the upstream-owned scripts in .github/scripts/: base ships
+  # them to every instance, whose own ruff-format hook then checks them
+  # against .github/scripts/ruff.toml (the closest config wins), so an
+  # unformatted script here fails every Python instance after a sync. Base
+  # has no Python toolchain of its own, hence this pinned hook, scoped to
+  # that directory only. Keep the rev equal to the ruff the Python
+  # templates pin in pyproject.toml.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        name: ruff check (.github/scripts)
+        files: ^\.github/scripts/.*\.py$
+        stages: [pre-commit, manual]
+      - id: ruff-format
+        name: ruff format (.github/scripts)
+        files: ^\.github/scripts/.*\.py$
+        stages: [pre-commit, manual]
+
   - repo: local
     hooks:
       - id: template-sync-manifest
