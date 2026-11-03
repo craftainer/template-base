@@ -403,7 +403,7 @@ jobs:
   # secrets live in this job alone, and a job-level `if` on the
   # `*_PUBLISH` repository variables means an image-only instance never
   # starts it: it never requests an OIDC token and never has a package
-  # secret in an environment. (`vars` is allowed in `jobs.<id>.if`;
+  # secret in its process environment. (`vars` is allowed in `jobs.<id>.if`;
   # `secrets` is not, which is why the variables are the opt-in switch.)
   # The assembled `dist/` is downloaded first, so `make publish-packages`
   # uploads exactly what `make build` produced.

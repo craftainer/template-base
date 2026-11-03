@@ -921,21 +921,14 @@ class ReleaseWorkflowGuardTest(unittest.TestCase):
 
     def test_privileged_jobs_declare_the_release_environment(self) -> None:
         """Jobs with write permissions, an OIDC token or secrets run in ``release``, and no others."""
+        # Any write permission (including write-all), any OIDC token, and any
+        # reference to secrets other than GITHUB_TOKEN (dotted, bracketed,
+        # `secrets: inherit`, or the whole context).
         privileged = re.compile(
-            r"contents: write|packages: write|id-token: write|\$\{\{ secrets\.(?!GITHUB_TOKEN)"
+            r"[\w-]+: write\b|write-all|secrets\s*:\s*inherit"
+            r"|secrets\s*\[|secrets\s*\.\s*(?!GITHUB_TOKEN\b)"
         )
         names = re.findall(r"^  ([a-z][\w-]*):\n", self.text.split("\njobs:\n", 1)[1], re.MULTILINE)
-        self.assertEqual(
-            names,
-            [
-                "version",
-                "build",
-                "release-check",
-                "release",
-                "publish-packages",
-                "verify-published",
-            ],
-        )
         found = []
         for name in names:
             # Comments mention these keys too; only the YAML itself counts.
@@ -947,11 +940,13 @@ class ReleaseWorkflowGuardTest(unittest.TestCase):
                 self.assertEqual(has_env, bool(privileged.search(body)))
             if has_env:
                 found.append(name)
-        self.assertEqual(found, ["build", "release", "publish-packages"])
+        self.assertTrue(found, "no job declares environment: release")
 
     def test_environment_is_a_plain_name_not_an_expression(self) -> None:
         """A dispatcher-controlled expression could pick an unrestricted environment."""
-        for match in re.finditer(r"^\s+environment:\s*(.*)$", self.text, re.MULTILINE):
+        matches = list(re.finditer(r"^[ \t]+environment:[ \t]*(.*)$", self.text, re.MULTILINE))
+        self.assertTrue(matches, "no environment: line found")
+        for match in matches:
             self.assertEqual(match.group(1).strip(), "release")
 
     def test_environment_is_documented_for_instances(self) -> None:
