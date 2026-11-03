@@ -919,6 +919,45 @@ class ReleaseWorkflowGuardTest(unittest.TestCase):
             if name != "version":
                 self.assertRegex(self.job(name), r"needs: ", name)
 
+    def test_privileged_jobs_declare_the_release_environment(self) -> None:
+        """Jobs with write permissions, an OIDC token or secrets run in ``release``, and no others."""
+        # Any write permission (including write-all), any OIDC token, and any
+        # reference to secrets other than GITHUB_TOKEN (dotted, bracketed,
+        # `secrets: inherit`, or the whole context).
+        privileged = re.compile(
+            r"[\w-]+: write\b|write-all|secrets\s*:\s*inherit"
+            r"|secrets\s*\[|secrets\s*\.\s*(?!GITHUB_TOKEN\b)"
+        )
+        names = re.findall(r"^  ([a-z][\w-]*):\n", self.text.split("\njobs:\n", 1)[1], re.MULTILINE)
+        found = []
+        for name in names:
+            # Comments mention these keys too; only the YAML itself counts.
+            body = "\n".join(
+                line for line in self.job(name).splitlines() if not line.lstrip().startswith("#")
+            )
+            has_env = re.search(r"^    environment: release$", body, re.MULTILINE) is not None
+            with self.subTest(job=name):
+                self.assertEqual(has_env, bool(privileged.search(body)))
+            if has_env:
+                found.append(name)
+        self.assertTrue(found, "no job declares environment: release")
+
+    def test_environment_is_a_plain_name_not_an_expression(self) -> None:
+        """A dispatcher-controlled expression could pick an unrestricted environment."""
+        matches = list(re.finditer(r"^[ \t]+environment:[ \t]*(.*)$", self.text, re.MULTILINE))
+        self.assertTrue(matches, "no environment: line found")
+        for match in matches:
+            self.assertEqual(match.group(1).strip(), "release")
+
+    def test_environment_is_documented_for_instances(self) -> None:
+        """The setup step and the allowed-secrets move are in the instance-facing docs."""
+        docs = SCRIPTS.parent.parent / "docs" / "TEMPLATE.md"
+        text = docs.read_text()
+        self.assertIn("Release environment", text)
+        self.assertIn("gh secret set NAME --env release", text)
+        readme = (SCRIPTS.parent / "workflows" / "README.md").read_text()
+        self.assertIn("environment: release", readme)
+
     def test_release_is_created_at_the_dispatched_sha(self) -> None:
         """The tag and release target ``github.sha``, the tip of the (default) branch dispatched."""
         self.assertIn("TARGET_SHA: ${{ github.sha }}", self.text)

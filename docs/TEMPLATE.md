@@ -178,17 +178,60 @@ Findings from the OWASP review (A03/A08), and what each now does:
   the check as a job-level `if:`. This stops an accidental dispatch from another branch, but
   it is not a security boundary: GitHub runs the workflow file from the
   dispatched ref, so a writer can delete the checks on their own branch.
-  To enforce it, hold the registry secrets in an environment whose
-  deployment branches are limited to the default branch (or use a
-  ruleset). The tag and
-  release target `github.sha`, which for a dispatch on the default branch
-  is its tip. Instances get this through template sync.
+  The server-side rule is the `release` environment (next bullet).
+  The tag and release target `github.sha`, which for a dispatch on the
+  default branch is its tip. Instances get this through template sync.
   GitHub's [events documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
   defines `GITHUB_REF` for a dispatch as the "branch or tag that received
   dispatch", so the check has to be explicit; the
   [secure-use guide](https://docs.github.com/en/actions/reference/security/secure-use)
   asks for the least privilege `GITHUB_TOKEN` and warns that anyone with
   write access can read repository secrets.
+- **Release environment (setup step for each instance).** `release.yml`'s
+  `build`, `release` and `publish-packages` jobs declare `environment:
+  release`. An admin must configure it once per repository, **before the
+  first release that carries this workflow**: GitHub creates a
+  referenced-but-missing environment with no rules and no secrets, so an
+  unconfigured one protects nothing. Settings → Environments → `release`:
+  Deployment branches and tags → *Selected branches and tags* → add the
+  default branch (e.g. `main`) as a branch rule; or with the API,
+  `PUT repos/<owner>/<repo>/environments/release` with
+  `deployment_branch_policy: {protected_branches: false,
+  custom_branch_policies: true}`, then `POST
+  .../environments/release/deployment-branch-policies` with `name=<default
+  branch>` and `type=branch`. Then move the release secrets
+  (`OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, `NPM_TOKEN`,
+  `CARGO_REGISTRY_TOKEN`) from repository secrets into the environment
+  (`gh secret set NAME --env release`, then `gh secret delete NAME`). An
+  *organization* secret of the same name stays readable by any workflow
+  in a repository it is shared with: delete it and recreate it as an
+  environment secret instead. A run
+  from any other ref is then refused the privileged jobs and cannot read
+  them, even if the in-workflow default-branch check was deleted on that
+  branch. The `jobs.<id>.environment` secrets are read as `secrets.NAME`
+  exactly like repository secrets, so no step changes (an environment
+  secret overrides a repository one of the same name); repository
+  *variables* (`PYPI_PUBLISH`, `OCI_REGISTRY`, ...) stay as they are.
+  `release-check`, `verify-published` and `version` hold no write
+  permission or secret and do not use the environment. Syncing the
+  workflow into an instance does not create or configure the environment;
+  until the steps above are done, nothing fails and nothing is protected.
+  The `build` job is a matrix, so each arch leg, `release` and
+  `publish-packages` is its own deployment: use the branch rule only.
+  Required reviewers or a wait timer would ask for approval once per job
+  and leg. If the repository
+  is private it needs a plan that supports environments. Trusted
+  publishers (npm, PyPI, crates.io) have an optional *environment* field,
+  and it must be set to `release`: that field is what binds publishing to
+  the environment, and without it a branch workflow with `id-token: write`
+  can still publish by OIDC. Set it once `release.yml` with the
+  environment is on the default branch. The registries only report a bad
+  config when you publish. Residual: a writer's branch workflow can
+  request `packages: write` itself, so the environment does not gate GHCR
+  pushes; mitigate with the package's GHCR Actions-access setting, pinning
+  consumed images and features by digest, and an org ruleset requiring
+  review for `.github/workflows/**`. See the [GitHub documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+  and [npm's](https://docs.npmjs.com/trusted-publishers).
 - **Renovate waits 3 days before automerging.** The "patch and minor
   updates" group sets `minimumReleaseAge: "3 days"` (the age Renovate's
   own `security:minimumReleaseAgeNpm` preset uses) with
@@ -261,10 +304,10 @@ unchanged across every instance), then drives these targets:
 | Target | Runs | Where | Env available |
 |---|---|---|---|
 | `release-arches` | once, first | host runner | none; must print a JSON array on stdout, e.g. `["amd64"]` |
-| `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*` (`GITHUB_TOKEN` has `packages: write`); no package-registry variables or secrets, and no OIDC token |
+| `build`, `sbom`, `release-assets`, `publish` | once **per arch**, in that order | host runner for that arch | `RELEASE_VERSION`, `RELEASE_TAG`, `RELEASE_ARCH`, `OCI_REGISTRY`, `OCI_IMAGE_NAME`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, all `GITHUB_*` (`GITHUB_TOKEN` has `packages: write`); the registry credentials come from the `release` environment; no package-registry variables or secrets, and no OIDC token |
 | `release-check` | once, after all arches; gates the GitHub release and `publish-packages` (not the per-arch image `publish`, which already ran in `build`) | **inside the devcontainer** (`devcontainers/ci`), stack up | `RELEASE_VERSION`, `RELEASE_TAG`, `GITHUB_REPOSITORY`; **not** `RELEASE_ARCH` (it runs once, not per arch) and no `ARCHES`: to check each arch's files in `dist/`, iterate over `make -s release-arches` |
 | `finalize` | once, after `release-check`; then the GitHub release is created | host runner | same as per-arch minus `RELEASE_ARCH` (`GITHUB_TOKEN` also has `packages: write`) |
-| `publish-packages` | once, after the GitHub release exists, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
+| `publish-packages` | once, after the GitHub release exists, **only if** `PYPI_PUBLISH`, `NPM_PUBLISH` or `CARGO_PUBLISH` is set | host runner (own job, with `id-token: write`, in the `release` environment) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`, all `GITHUB_*`, the OIDC token, `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (bootstrap secrets; empty when unset, so treat empty as absent); `dist/` holds every arch leg's files |
 | `verify-published` | once, after `publish-packages` succeeded, **only if** a `*_PUBLISH` variable is set | host runner (own job, no secrets, no OIDC token) | `RELEASE_VERSION`, `RELEASE_TAG`, `PYPI_PUBLISH`, `NPM_PUBLISH`, `CARGO_PUBLISH`; `dist/` as for `publish-packages` |
 
 What each target is for: `build` produces the release artifact(s) (an

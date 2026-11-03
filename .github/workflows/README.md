@@ -18,6 +18,11 @@
 - `release.yml` — manually triggered, and only from the default branch:
   the `version` job's first step fails on any other ref, and `build`,
   `release` and `publish-packages` repeat the check in their own `if:`.
+  Those three jobs (the ones with `contents: write`, `packages: write`,
+  `id-token: write` or registry/npm secrets) also declare `environment:
+  release`: the server-side rule, with deployment branches limited to the
+  default branch and the registry/npm secrets held in that environment
+  (setup: `../../docs/TEMPLATE.md`, "Release environment").
   Takes a release channel
   (`alpha`/`beta`/`rc`/`full`) and a SemVer 2 bump
   (`major`/`minor`/`patch`/`none`), computes the next tag via
@@ -342,6 +347,16 @@ the registry push) carry the same label set, computed once by
 
 ## Release variables and secrets
 
+The secrets below belong in the `release` environment (Settings →
+Environments), not in repository secrets: `build`, `release` and
+`publish-packages` declare `environment: release`, and the environment's
+deployment branches are limited to the default branch, so a run from
+another ref can't read them. The workflow reads them as `secrets.NAME`
+either way, and an environment secret wins over a repository secret of the
+same name. Variables stay repository-level. Configure the environment
+before the first release that uses it: a missing one is created by GitHub
+with no rules.
+
 `release.yml` passes these to the Makefile targets as environment
 variables of the same name; unset ones are empty, and a target should skip
 cleanly when the registry isn't configured.
@@ -384,6 +399,9 @@ cleanly when the registry isn't configured.
   `make finalize` can push to the repository's own GHCR packages with
   `GITHUB_TOKEN` (no other job has it; the token is in `build`'s job
   env, so every per-arch target can use it). Leave `checks.yml` at `contents: read`.
+- Keep `environment: release` on exactly the `release.yml` jobs that hold
+  `contents: write`, `packages: write`, `id-token: write` or registry/npm
+  secrets (`build`, `release`, `publish-packages`), and none elsewhere.
 - Keep `id-token: write` on `release.yml`'s `publish-packages` job only
   (PyPI, npm and crates.io trusted publishing via GitHub OIDC). GitHub
   permissions are per job, not per step, and that job's `if:` on the
