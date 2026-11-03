@@ -30,6 +30,9 @@ repos:
       - id: check-added-large-files
         stages: [pre-commit, manual]
       - id: check-merge-conflict
+        # Without this the hook only runs during an in-progress git merge, so
+        # conflict markers committed by a template-sync PR were never caught.
+        args: [--assume-in-merge]
         stages: [pre-commit, manual]
       - id: mixed-line-ending
         stages: [pre-commit, manual]

@@ -112,6 +112,11 @@ format, type check, test suite, dependency-vulnerability scan, ...),
 matching the shape `template-fastapi`'s own `.pre-commit-config.yaml`
 already establishes for `ruff`/`mypy`/`pytest`/`pip-audit`.
 
+`check-merge-conflict` runs with `--assume-in-merge`, so it flags committed
+conflict markers (a line starting `<<<<<<< `, `=======` or `>>>>>>> `) in any
+file, not just during an in-progress git merge; a template sync PR that
+commits a merge-tier conflict is then caught in CI.
+
 ### Security scanners
 
 | Hook | Scans | Stage | Network | OWASP (2025) |
