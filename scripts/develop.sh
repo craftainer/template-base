@@ -212,9 +212,12 @@ run_uv_python_install() {
 }
 
 # xz-utils: Node's own release tarballs are .tar.xz. gnupg and jq: verifying
-# the Claude Code manifest's signature and reading its checksum.
+# the Claude Code manifest's signature and reading its checksum. bubblewrap
+# and socat: the dependencies of Claude Code's built-in sandbox on Linux,
+# which the issue-moderation workflows require (run_claude.sh fails closed
+# without it).
 apt-get update
-apt-get install -y --no-install-recommends gnupg jq xz-utils
+apt-get install -y --no-install-recommends gnupg jq xz-utils bubblewrap socat
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
