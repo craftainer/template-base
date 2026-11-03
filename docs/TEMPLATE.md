@@ -103,12 +103,19 @@ instance's own toolchain needs.
 `.pre-commit-config.yaml` defines whitespace/EOF fixers, YAML/TOML/JSON
 checks, `conventional-pre-commit` (Conventional Commits, enforced at the
 `commit-msg` stage), the `template-sync-manifest` completeness check, and
-the `devcontainer-lock` lockfile-consistency check, and three security
-scanners (below). An instance layers
+the `devcontainer-lock` lockfile-consistency check, `ruff-check`/`ruff-format`
+(`astral-sh/ruff-pre-commit`, scoped to `.github/scripts/*.py` so base can't
+ship scripts that fail a Python instance's own ruff hook; keep its `rev` equal
+to the ruff the Python templates pin), and three security scanners (below). An instance layers
 its own language-specific hooks on top (lint,
 format, type check, test suite, dependency-vulnerability scan, ...),
 matching the shape `template-fastapi`'s own `.pre-commit-config.yaml`
 already establishes for `ruff`/`mypy`/`pytest`/`pip-audit`.
+
+`check-merge-conflict` runs with `--assume-in-merge`, so it flags committed
+conflict markers (a line starting `<<<<<<< `, `=======` or `>>>>>>> `) in any
+file, not just during an in-progress git merge; a template sync PR that
+commits a merge-tier conflict is then caught in CI.
 
 ### Security scanners
 
