@@ -89,7 +89,7 @@
   that label the test fails until you look up the new image's `python3`
   (actions/runner-images) and update `RUNNER_IMAGE_PYTHON`, `RUNNER_PYTHON` and
   `ruff.toml` together.
-- Formatting: base has no Python toolchain, so `ruff-check`/`ruff-format`
+- Formatting: base has no ruff dependency of its own, so `ruff-check`/`ruff-format`
   from `astral-sh/ruff-pre-commit` in `../../.pre-commit-config.yaml`, scoped
   to `^\.github/scripts/.*\.py$`, keep these scripts formatted to `ruff.toml`.
   Unformatted scripts would otherwise fail every Python instance's own

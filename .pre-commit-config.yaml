@@ -52,7 +52,7 @@ repos:
   # them to every instance, whose own ruff-format hook then checks them
   # against .github/scripts/ruff.toml (the closest config wins), so an
   # unformatted script here fails every Python instance after a sync. Base
-  # has no Python toolchain of its own, hence this pinned hook, scoped to
+  # has no ruff dependency of its own, hence this pinned hook, scoped to
   # that directory only. Keep the rev equal to the ruff the Python
   # templates pin in pyproject.toml.
   - repo: https://github.com/astral-sh/ruff-pre-commit
