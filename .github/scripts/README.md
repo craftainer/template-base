@@ -4,6 +4,12 @@
   tags and prints the next `tag=` / `version=` / `prerelease=` for
   `../workflows/release.yml`, given a release channel and a SemVer 2
   bump.
+- `setup_environments.sh` — creates or updates the `release`, `moderation`
+  and `template-sync` GitHub environments (default-branch-only deployment
+  rule) and prints the commands that move their secrets in; dry run unless
+  `--apply` (see `../../docs/TEMPLATE.md`, "Moderation and template-sync
+  environments"). `test_environments.py` runs the workflows' environment
+  check step against a stub `gh`.
 - `template_sync_manifest.py` — parses `../template-sync-manifest.yml`
   and checks that every git-tracked path matches exactly one tier;
   backs both the `template-sync-manifest` prek hook and
