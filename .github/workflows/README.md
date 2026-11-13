@@ -274,8 +274,13 @@ Activating this in a given repo/fork takes two one-time steps, neither
 of which is itself a workflow: provisioning a dedicated Anthropic
 Console workspace (its own `ANTHROPIC_API_KEY`, a monthly spend limit,
 and a usage alert at 80% of it) and storing that key as the
-`ANTHROPIC_API_KEY` repository secret, then running `moderate-setup.yml`
-once to create the labels below.
+`ANTHROPIC_API_KEY` secret of the `moderation` environment (the `gate`
+and Claude jobs declare `environment: moderation`; create it with
+`../scripts/setup_environments.sh`, see `../../docs/TEMPLATE.md`,
+"Moderation and template-sync environments"), then running
+`moderate-setup.yml` once to create the labels below. The `gate` job's
+first step fails the run if that environment is missing or isn't
+restricted to the default branch.
 
 Two independent label sequences track state, applied by the `apply` jobs
 (`gh issue edit`) from a fixed action-to-label table, or by a deterministic
@@ -302,7 +307,7 @@ output — `secrets` isn't readable from `jobs.<job_id>.if` directly
 `jobs.<job_id>.env`. The real job then carries
 `if: needs.gate.outputs.has-key == 'true' && <trust condition>`,
 checked before checkout — so a fork or clone that hasn't set the
-`ANTHROPIC_API_KEY` repository secret sees every one of these jobs show
+`ANTHROPIC_API_KEY` secret sees every one of these jobs show
 **Skipped**, not **Failed**, and gets no failure-triggered email from
 GitHub's default Actions notifications. `moderate-cleanup.yml` has no
 such gate (see its own header comment) and always runs.
@@ -433,7 +438,8 @@ variables/secrets, all optional:
   no-ops except during the first cron-scheduled week of the month.
 - `TEMPLATE_SYNC_CHANNEL` (variable, `stable` | `alpha` | `beta` | `rc`,
   default `stable`) — which tag channel to sync to.
-- `TEMPLATE_SYNC_TOKEN` (secret) — a PAT used to read the template
+- `TEMPLATE_SYNC_TOKEN` (secret, held in the `template-sync` environment the
+  `sync` job declares; first step checks it) — a PAT used to read the template
   repository and to push the sync branch / open the sync PR. It needs
   the `workflow` scope (classic PAT) or **Workflows: read/write**
   (fine-grained), because the default `GITHUB_TOKEN` can't push
