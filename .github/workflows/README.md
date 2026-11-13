@@ -67,7 +67,19 @@
   fails the job before the sync state advances. The job then exits with
   `apply`'s own status when that is 2 or higher (so the log and the step's
   exit code tell an error from conflicts) and the summary is printed as valid
-  only after that check. The sync never copies Python bytecode
+  only after that check. The `ignore` tier is instance-owned: sync never overwrites or deletes an
+  `ignore` file. The one exception is a new starting copy: an exact-path
+  `ignore` entry whose file the new tag introduces (the previous synced tag
+  lacks it) is created when the instance lacks it, and the PR body lists it
+  under "New instance-owned files". A glob or directory entry is never
+  created, nor is a file the previous tag already had, so a file the instance
+  deleted stays deleted. A path's tier comes from the upstream tag's manifest
+  only, so when a parent's `ignore` file (template-docker's `README.md`,
+  `Dockerfile`, `image.mk`) is also listed by the instance's own manifest
+  (template-fastapi or -react, which ship their own versions), the parent's
+  `ignore` wins for that sync: the instance's copy is left as it is, and its
+  own manifest classifies the path only for the instance's own instances.
+  The sync never copies Python bytecode
   (`__pycache__/`, `*.pyc`), and the apply step sets
   `PYTHONDONTWRITEBYTECODE` so running the script cannot create any in the
   template checkout.
