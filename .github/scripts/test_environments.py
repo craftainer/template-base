@@ -257,6 +257,12 @@ class SetupEnvironmentsScriptTest(unittest.TestCase):
     """Run ``setup_environments.sh`` (dry run) against a stub ``gh``."""
 
     STUB = """#!/usr/bin/env bash
+if [ "$2" = --method ]; then
+  # gh api --method PUT <url> --input - : record the body, accept it.
+  echo "$3 $4" > "$DATA/call.txt"
+  cat > "$DATA/body.json"
+  exit 0
+fi
 url="$2"
 case "$url" in
   orgs/o/actions/secrets) cat "$DATA/org.json" ;;
@@ -267,15 +273,29 @@ case "$url" in
     echo '{"branch_policies":[{"type":"branch","name":"main"}]}' ;;
   repos/o/r/environments/*/secrets) echo '{"secrets":[]}' ;;
   repos/o/r/environments/*)
-    echo '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' ;;
+    cat "$DATA/env.json" ;;
   repos/o/r/contents/*) cat "$DATA/workflow.txt" ;;
   *) echo "unexpected $*" >&2; exit 1 ;;
 esac
 """
 
-    def run_setup(self, secrets: list[dict], shared: list[str], workflow: str) -> str:
+    OK_ENV = {
+        "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}
+    }
+
+    def run_setup(
+        self,
+        secrets: list[dict],
+        shared: list[str],
+        workflow: str,
+        env: dict | None = None,
+        apply: bool = False,
+        put: dict | None = None,
+    ) -> str:
+        """Run the script; if ``put`` is a dict, fill it with the PUT body sent (if any)."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
+            (tmp_path / "env.json").write_text(json.dumps(env or self.OK_ENV))
             bindir = tmp_path / "bin"
             bindir.mkdir()
             (tmp_path / "org.json").write_text(json.dumps({"secrets": secrets}))
@@ -287,13 +307,24 @@ esac
             stub.write_text(self.STUB)
             stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
             proc = subprocess.run(  # noqa: S603 -- fixed argv, local stub
-                [str(SCRIPTS / "setup_environments.sh"), "--env", "moderation", "--org", "o", "r"],
+                [
+                    str(SCRIPTS / "setup_environments.sh"),
+                    *(["--apply"] if apply else []),
+                    "--env",
+                    "moderation",
+                    "--org",
+                    "o",
+                    "r",
+                ],
                 env={"PATH": f"{bindir}:{os.environ['PATH']}", "DATA": tmp},
                 capture_output=True,
                 text=True,
                 check=False,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            body = tmp_path / "body.json"
+            if put is not None and body.exists():
+                put.update(json.loads(body.read_text()))
             return proc.stdout
 
     def test_org_secret_flagged_for_all_private_and_selected_sharing_the_repo(self) -> None:
@@ -314,6 +345,44 @@ esac
         for _ in range(3):
             out = self.run_setup([], [], workflow)
             self.assertIn("declares 'environment: moderation': yes", out)
+
+    def test_apply_keeps_can_admins_bypass_and_other_protection_rules(self) -> None:
+        """A PUT replaces what it omits: every existing setting must be sent back."""
+        for bypass in (False, True):
+            with self.subTest(can_admins_bypass=bypass):
+                env = {
+                    "can_admins_bypass": bypass,
+                    "deployment_branch_policy": None,
+                    "protection_rules": [
+                        {"type": "wait_timer", "wait_timer": 15},
+                        {
+                            "type": "required_reviewers",
+                            "prevent_self_review": True,
+                            "reviewers": [{"type": "User", "reviewer": {"id": 7, "login": "x"}}],
+                        },
+                    ],
+                }
+                put: dict = {}
+                self.run_setup([], [], "", env=env, apply=True, put=put)
+                self.assertEqual(
+                    put,
+                    {
+                        "deployment_branch_policy": {
+                            "protected_branches": False,
+                            "custom_branch_policies": True,
+                        },
+                        "can_admins_bypass": bypass,
+                        "wait_timer": 15,
+                        "prevent_self_review": True,
+                        "reviewers": [{"type": "User", "id": 7}],
+                    },
+                )
+
+    def test_apply_omits_can_admins_bypass_when_the_environment_reports_none(self) -> None:
+        """Nothing to preserve (a missing environment reads as 404): GitHub's default applies."""
+        put: dict = {}
+        self.run_setup([], [], "", env={"deployment_branch_policy": None}, apply=True, put=put)
+        self.assertNotIn("can_admins_bypass", put)
 
 
 if __name__ == "__main__":

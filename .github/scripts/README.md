@@ -6,7 +6,7 @@
   bump.
 - `setup_environments.sh` — creates or updates the `release`, `moderation`
   and `template-sync` GitHub environments (default-branch-only deployment
-  rule) and prints the commands that move their secrets in; dry run unless
+  rule; existing reviewers, wait timer and `can_admins_bypass` are kept) and prints the commands that move their secrets in; dry run unless
   `--apply` (see `../../docs/TEMPLATE.md`, "Moderation and template-sync
   environments"). `test_environments.py` runs the workflows' environment
   check step (which fails closed on any API error other than a readable answer)

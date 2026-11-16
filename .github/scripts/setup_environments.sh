@@ -15,7 +15,8 @@
 # listed by name and visibility, and the ones visible to every repository,
 # every private one, or shared with a repository named here are
 # flagged (a branch workflow can read them; an environment can't stop that).
-# Existing reviewers and wait timers on an environment are kept.
+# Existing reviewers, wait timers and the admin-bypass setting on an
+# environment are kept (a new environment gets GitHub's default: admins bypass).
 #
 # Usage:
 #   setup_environments.sh [--apply] [--env NAME]... [--org ORG] REPO...
@@ -146,11 +147,14 @@ for r in "${repos[@]}"; do
     have_flags=null
     [ -z "$env_json" ] || have_flags=$(jq -c '.deployment_branch_policy // null' <<< "$env_json")
     if [ -z "$env_json" ] || [ "$have_flags" != "$want_flags" ]; then
-      # A PUT replaces what it omits, so carry over existing protection rules.
+      # A PUT replaces what it omits, so carry over existing protection rules
+      # and can_admins_bypass (read back by GET, accepted by PUT, though absent
+      # from GitHub's published OpenAPI schema).
       body=$(jq -c --argjson flags "$want_flags" '
         {deployment_branch_policy: $flags}
         + (if . == null then {} else
-            ([.protection_rules[]? | select(.type == "wait_timer") | .wait_timer][0]
+            (if .can_admins_bypass == null then {} else {can_admins_bypass: .can_admins_bypass} end)
+            + ([.protection_rules[]? | select(.type == "wait_timer") | .wait_timer][0]
               // null | if . == null then {} else {wait_timer: .} end)
             + ([.protection_rules[]? | select(.type == "required_reviewers")][0]
               // null | if . == null then {} else
