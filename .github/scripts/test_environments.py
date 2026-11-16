@@ -230,13 +230,90 @@ class EnvironmentCheckScriptTest(unittest.TestCase):
             with self.subTest(rules=rules):
                 self.assertEqual(self.run_check(self.GOOD, rules).returncode, 1)
 
-    def test_an_unreadable_environment_warns_and_continues(self) -> None:
-        proc = self.run_check(
-            None, env_error="gh: Resource not accessible by integration (HTTP 403)"
-        )
-        self.assertEqual(proc.returncode, 0)
-        self.assertIn("::warning::", proc.stdout)
-        self.assertIn("unverified", proc.stdout)
+    def test_an_unreadable_environment_fails_closed(self) -> None:
+        """A 401/403/5xx is not a pass: a policy that cannot be read is unverified."""
+        for error in (
+            "gh: Resource not accessible by integration (HTTP 403)",
+            "gh: Bad credentials (HTTP 401)",
+            "gh: Server Error (HTTP 502)",
+            "error connecting to api.github.com",
+        ):
+            with self.subTest(error=error):
+                proc = self.run_check(None, env_error=error)
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn("::error::", proc.stdout)
+                self.assertIn("fails closed", proc.stdout)
+                self.assertNotIn("does not exist", proc.stdout)
+
+    def test_no_workflow_check_step_exits_zero_on_an_api_error(self) -> None:
+        for name in CHECKED:
+            with self.subTest(workflow=name):
+                self.assertNotIn(
+                    "::warning::Cannot read environment", (WORKFLOWS / name).read_text()
+                )
+
+
+class SetupEnvironmentsScriptTest(unittest.TestCase):
+    """Run ``setup_environments.sh`` (dry run) against a stub ``gh``."""
+
+    STUB = """#!/usr/bin/env bash
+url="$2"
+case "$url" in
+  orgs/o/actions/secrets) cat "$DATA/org.json" ;;
+  orgs/o/actions/secrets/*/repositories) cat "$DATA/shared.json" ;;
+  repos/o/r) echo main ;;
+  repos/o/r/actions/secrets) echo '{"secrets":[]}' ;;
+  repos/o/r/environments/*/deployment-branch-policies)
+    echo '{"branch_policies":[{"type":"branch","name":"main"}]}' ;;
+  repos/o/r/environments/*/secrets) echo '{"secrets":[]}' ;;
+  repos/o/r/environments/*)
+    echo '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' ;;
+  repos/o/r/contents/*) cat "$DATA/workflow.txt" ;;
+  *) echo "unexpected $*" >&2; exit 1 ;;
+esac
+"""
+
+    def run_setup(self, secrets: list[dict], shared: list[str], workflow: str) -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bindir = tmp_path / "bin"
+            bindir.mkdir()
+            (tmp_path / "org.json").write_text(json.dumps({"secrets": secrets}))
+            (tmp_path / "shared.json").write_text(
+                json.dumps({"repositories": [{"full_name": n} for n in shared]})
+            )
+            (tmp_path / "workflow.txt").write_text(workflow)
+            stub = bindir / "gh"
+            stub.write_text(self.STUB)
+            stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+            proc = subprocess.run(  # noqa: S603 -- fixed argv, local stub
+                [str(SCRIPTS / "setup_environments.sh"), "--env", "moderation", "--org", "o", "r"],
+                env={"PATH": f"{bindir}:{os.environ['PATH']}", "DATA": tmp},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            return proc.stdout
+
+    def test_org_secret_flagged_for_all_private_and_selected_sharing_the_repo(self) -> None:
+        for vis, shared, flagged in (
+            ("all", [], True),
+            ("private", [], True),
+            ("selected", ["o/r"], True),
+            ("selected", ["o/other"], False),
+        ):
+            with self.subTest(visibility=vis, shared=shared):
+                secrets = [{"name": "ANTHROPIC_API_KEY", "visibility": vis}]
+                out = self.run_setup(secrets, shared, "environment: moderation\n")
+                self.assertEqual("FLAG:" in out, flagged, out)
+
+    def test_ready_detected_when_the_workflow_text_is_large(self) -> None:
+        """A match near the start of a big file must not turn into "no" through SIGPIPE."""
+        workflow = "environment: moderation\n" + "x" * 4_000_000 + "\n"
+        for _ in range(3):
+            out = self.run_setup([], [], workflow)
+            self.assertIn("declares 'environment: moderation': yes", out)
 
 
 if __name__ == "__main__":

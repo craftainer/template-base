@@ -279,9 +279,10 @@ Findings from the OWASP review (A03/A08), and what each now does:
   `actions: read` permission those endpoints need) and **fail** with a
   message when the environment is missing or has no custom branch policy,
   or its rules aren't exactly one `branch:<default branch>`. If the token
-  cannot read the environment (a 401/403), the step only warns that the
-  policy is unverified, so a token or plan difference never blocks a
-  release or a moderation run. The check is a fail-fast diagnostic only: a
+  cannot read the environment for any other reason (a 401/403 or a 5xx),
+  the step fails closed too: a policy it cannot verify is not assumed to
+  hold, so re-run once the API answers, or fix the token's `actions: read`.
+  The check is a fail-fast diagnostic only: a
   writer can delete it on their own branch. What enforces the rule is the
   environment itself.
 - **Renovate waits 3 days before automerging.** The "patch and minor
