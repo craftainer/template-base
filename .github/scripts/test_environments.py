@@ -279,13 +279,15 @@ case "$url" in
 esac
 """
 
+    EMPTY_ORG_LISTING: dict = {"secrets": []}  # org-level listing API payload with nothing in it
+
     OK_ENV = {
         "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}
     }
 
     def run_setup(
         self,
-        secrets: list[dict],
+        org_listing: dict,
         shared: list[str],
         workflow: str,
         env: dict | None = None,
@@ -298,7 +300,7 @@ esac
             (tmp_path / "env.json").write_text(json.dumps(env or self.OK_ENV))
             bindir = tmp_path / "bin"
             bindir.mkdir()
-            (tmp_path / "org.json").write_text(json.dumps({"secrets": secrets}))
+            (tmp_path / "org.json").write_text(json.dumps(org_listing))
             (tmp_path / "shared.json").write_text(
                 json.dumps({"repositories": [{"full_name": n} for n in shared]})
             )
@@ -335,15 +337,15 @@ esac
             ("selected", ["o/other"], False),
         ):
             with self.subTest(visibility=vis, shared=shared):
-                secrets = [{"name": "ANTHROPIC_API_KEY", "visibility": vis}]
-                out = self.run_setup(secrets, shared, "environment: moderation\n")
+                listing = {"secrets": [{"name": "ANTHROPIC_API_KEY", "visibility": vis}]}
+                out = self.run_setup(listing, shared, "environment: moderation\n")
                 self.assertEqual("FLAG:" in out, flagged, out)
 
     def test_ready_detected_when_the_workflow_text_is_large(self) -> None:
         """A match near the start of a big file must not turn into "no" through SIGPIPE."""
         workflow = "environment: moderation\n" + "x" * 4_000_000 + "\n"
         for _ in range(3):
-            out = self.run_setup([], [], workflow)
+            out = self.run_setup(self.EMPTY_ORG_LISTING, [], workflow)
             self.assertIn("declares 'environment: moderation': yes", out)
 
     def test_apply_keeps_can_admins_bypass_and_other_protection_rules(self) -> None:
@@ -363,7 +365,7 @@ esac
                     ],
                 }
                 put: dict = {}
-                self.run_setup([], [], "", env=env, apply=True, put=put)
+                self.run_setup(self.EMPTY_ORG_LISTING, [], "", env=env, apply=True, put=put)
                 self.assertEqual(
                     put,
                     {
@@ -381,7 +383,14 @@ esac
     def test_apply_omits_can_admins_bypass_when_the_environment_reports_none(self) -> None:
         """Nothing to preserve (a missing environment reads as 404): GitHub's default applies."""
         put: dict = {}
-        self.run_setup([], [], "", env={"deployment_branch_policy": None}, apply=True, put=put)
+        self.run_setup(
+            self.EMPTY_ORG_LISTING,
+            [],
+            "",
+            env={"deployment_branch_policy": None},
+            apply=True,
+            put=put,
+        )
         self.assertNotIn("can_admins_bypass", put)
 
     def run_raw(self, *args: str) -> subprocess.CompletedProcess[str]:
