@@ -13,7 +13,8 @@
   output to `$GITHUB_ENV` only if it is empty or exactly
   `SEMVER_RELEASE_TYPE=` with an optional `major`, `minor` or `patch`
   value, failing otherwise), so a `!`-marked PR title (or, on
-  `main`, head commit subject) runs `cargo semver-checks` as `major`.
+  `main`, head commit subject) makes that check treat the change as `major`
+  (template-rust-crate runs `cargo semver-checks` with it).
 - `release.yml` — manually triggered, and only from the default branch:
   the `version` job's first step fails on any other ref, and `build`,
   `release` and `publish-packages` repeat the check in their own `if:`.
@@ -61,7 +62,12 @@
   fails the job before the sync state advances. The job then exits with
   `apply`'s own status when that is 2 or higher (so the log and the step's
   exit code tell an error from conflicts) and the summary is printed as valid
-  only after that check. The `ignore` tier is instance-owned: sync never overwrites or deletes an
+  only after that check. The sync never copies Python bytecode
+  (`__pycache__/`, `*.pyc`), and the apply step sets
+  `PYTHONDONTWRITEBYTECODE` so running the script cannot create any in the
+  template checkout.
+
+  The `ignore` tier is instance-owned: sync never overwrites or deletes an
   `ignore` file. The one exception is a new starting copy: an exact-path
   `ignore` entry whose file the new tag introduces (the previous synced tag
   lacks it) is created when the instance lacks it, and the PR body lists it
@@ -73,10 +79,6 @@
   (template-fastapi or -react, which ship their own versions), the parent's
   `ignore` wins for that sync: the instance's copy is left as it is, and its
   own manifest classifies the path only for the instance's own instances.
-  The sync never copies Python bytecode
-  (`__pycache__/`, `*.pyc`), and the apply step sets
-  `PYTHONDONTWRITEBYTECODE` so running the script cannot create any in the
-  template checkout.
 
 Every workflow's `runs-on` defaults to `ubuntu-24.04` but can be
 overridden with the `CI_RUNNER` repository/organization variable —

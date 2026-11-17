@@ -58,15 +58,15 @@
   or `git init --bare` act on the outer repository, e.g. flipping its
   `core.bare`) and keeps only a test identity.
 - `test_template_sync.py` — stdlib `unittest` tests for
-  `template_sync.py`'s replace and merge tiers, new ignore-tier files (including the executable
-  bit, re-running a merge, symlinked destinations, and `git merge-file`
-  errors raising instead of counting as conflicts, binary files counting
-  as conflicts, symlinked destinations kept on removal, one tree walk for
-  all globs, `apply`'s exit codes: 0 clean, 1 conflicts, 2 error,
-  including a missing or undecodable manifest and a failing `tier_paths`,
-  and `check-apply`), glob expansion of
-  manifest entries, and a check that every script a workflow runs directly
-  is executable; backs the `scripts-tests` prek hook.
+  `template_sync.py`'s replace and merge tiers and its new ignore-tier files
+  (including the executable bit). The merge tests cover re-running a merge,
+  `git merge-file` errors raising instead of counting as conflicts, and binary
+  files counting as conflicts. Further tests cover symlinked destinations
+  (kept on removal), one tree walk for all globs, `apply`'s exit codes (0 clean,
+  1 conflicts, 2 error, including a missing or undecodable manifest and a
+  failing `tier_paths`), `check-apply`, glob expansion of manifest entries,
+  and a check that every script a workflow runs directly is executable; backs
+  the `scripts-tests` prek hook.
 - `assemble_dist.py` / `has_make_target.sh` — helpers of
   `../workflows/release.yml`: merge the per-arch `dist/` tarballs
   (validating ARCHES_JSON, rejecting any path two arches both produce,
@@ -143,8 +143,9 @@
   `../workflows/README.md`'s "Issue moderation" section and
   `https://github.com/craftainer/template-base/blob/main/docs/adrs/0001-harden-the-issue-moderation-workflows.md`.
 - `moderate_lib.sh` — sourced by the moderation scripts below: `is_sha`,
-  `is_ancestor` (compare API; a failed call is retried up to three times,
-  a definite "not ahead" answer is not), `check_result_tree` (the commits a patch
+  `is_ancestor` (compare API; a transient failure, a 5xx, a rate limit or no
+  HTTP answer, is retried up to three times, a permanent error such as a 404
+  or 422 and a definite "not ahead" answer are not), `check_result_tree` (the commits a patch
   produced against the path allow-list and no symlink or submodule),
   `agent_file` (a result file must be a regular file really under
   `.moderation-out/`) and the size caps.

@@ -201,7 +201,10 @@ for r in "${repos[@]}"; do
     # Into a variable, not `| grep -q`: grep -q exits on its first match, the
     # producer can then die of SIGPIPE, and pipefail would report that as "no".
     wf_text=$(get "repos/$repo/contents/.github/workflows/$wf" -H "Accept: application/vnd.github.raw")
-    if grep -q "environment: $env_name" <<< "$wf_text"; then
+    # A real `environment:` line naming exactly this environment (optionally
+    # quoted or followed by a comment), not a commented-out line or a longer
+    # name that merely starts with it (`release-staging`).
+    if grep -Eq "^[^#]*environment:[[:space:]]*['\"]?$env_name['\"]?[[:space:]]*(#.*)?\$" <<< "$wf_text"; then
       ready=yes
     fi
     echo "    $wf on $default declares 'environment: $env_name': $ready"
