@@ -12,6 +12,11 @@
   check step (which fails closed on any API error other than a readable answer)
   and this script against a stub `gh`. Org secrets are flagged when visible to
   `all` or `private` repositories, or `selected` ones that include a repo given.
+  Before any API call it validates every value that goes into an API path
+  (exit 2 on a bad one): `--env` must be `release`, `moderation` or
+  `template-sync`; the owner is letters, digits and single dashes (at most 39
+  characters); the repository name is 1-100 of letters, digits, `.`, `-`, `_`,
+  and never `.` or `..`. Nothing is URL-encoded, since no allowed value needs it.
 - `template_sync_manifest.py` — parses `../template-sync-manifest.yml`
   and checks that every git-tracked path matches exactly one tier;
   backs both the `template-sync-manifest` prek hook and

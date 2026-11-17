@@ -252,7 +252,9 @@ Findings from the OWASP review (A03/A08), and what each now does:
   `setup_environments.sh OWNER/REPO` is a dry run that prints what it
   would do; `--apply` creates each environment with *Selected branches*
   and one rule, the default branch, and keeps any reviewers, wait timer or
-  `can_admins_bypass` setting already set; `--env NAME` limits it. It never touches secrets (values
+  `can_admins_bypass` setting already set; `--env NAME` limits it. It rejects (exit 2, before any API call) an
+  environment other than the three above and an owner or repository name
+  outside GitHub's documented character rules. It never touches secrets (values
   can't be read back): it prints `gh secret set NAME --env <environment>`
   and `gh secret delete NAME` for you to run, and flags an organization
   secret visible to all repositories, which any branch workflow can read

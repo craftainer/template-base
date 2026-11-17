@@ -49,6 +49,37 @@ usage() {
   sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
 }
 
+# Values interpolated into `gh api` paths are validated first, so a typo or a
+# hostile argument (`..`, `/`, control characters, `?`, `#`) can never retarget
+# an API call. Environment names are a fixed allowlist (--env below), so no
+# URL-encoding is ever needed. Owner and repository rules, from GitHub's docs
+# (docs.github.com, "Username considerations for external authentication" and
+# "Creating a new repository"):
+#   owner: ASCII letters and digits with single dashes between them, not
+#          starting or ending with a dash, at most 39 characters;
+#   repo:  1-100 ASCII letters, digits, `.`, `-` and `_`; `.` and `..` are
+#          never a name (they would be path segments).
+valid_owner() {
+  [ "${#1}" -le 39 ] && [[ $1 =~ ^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$ ]]
+}
+valid_repo_name() {
+  [ "${#1}" -le 100 ] && [[ $1 =~ ^[A-Za-z0-9._-]+$ ]] && [ "$1" != . ] && [ "$1" != .. ]
+}
+valid_env() {
+  case "$1" in release | moderation | template-sync) return 0 ;; *) return 1 ;; esac
+}
+# resolve_repo ARG: ARG is `owner/name` or a bare name under $ORG; prints owner/name.
+resolve_repo() {
+  local owner name
+  case "$1" in
+    */*) owner=${1%%/*}; name=${1#*/} ;;
+    *) owner=$ORG; name=$1 ;;
+  esac
+  valid_owner "$owner" || { printf 'invalid repository owner %q (letters, digits and single dashes, at most 39 characters)\n' "$owner" >&2; return 1; }
+  valid_repo_name "$name" || { printf 'invalid repository name %q (1-100 of letters, digits, ., - and _; not . or ..)\n' "$name" >&2; return 1; }
+  echo "$owner/$name"
+}
+
 repos=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -72,6 +103,17 @@ if [ "${#repos[@]}" -eq 0 ]; then
 fi
 [ "${#ENVS[@]}" -gt 0 ] || ENVS=(release moderation template-sync)
 [ -n "$ORG" ] || ORG=$(gh repo view --json owner -q .owner.login)
+valid_owner "$ORG" || { printf 'invalid organization %q (letters, digits and single dashes, at most 39 characters)\n' "$ORG" >&2; exit 2; }
+for e in "${ENVS[@]}"; do
+  valid_env "$e" || { printf 'invalid environment %q\n' "$e" >&2; exit 2; }
+done
+# Validate every repository before the first API call (nothing is read or written on a bad one).
+resolved=()
+for r in "${repos[@]}"; do
+  full=$(resolve_repo "$r") || exit 2
+  resolved+=("$full")
+done
+repos=("${resolved[@]}")
 
 echo "Mode: $($APPLY && echo APPLY || echo "DRY RUN (no changes; pass --apply)"); environments: ${ENVS[*]}"
 

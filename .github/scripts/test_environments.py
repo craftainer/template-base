@@ -384,6 +384,78 @@ esac
         self.run_setup([], [], "", env={"deployment_branch_policy": None}, apply=True, put=put)
         self.assertNotIn("can_admins_bypass", put)
 
+    def run_raw(self, *args: str) -> subprocess.CompletedProcess[str]:
+        """Run the script with ``args``; the stub ``gh`` logs every call it receives."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bindir = tmp_path / "bin"
+            bindir.mkdir()
+            stub = bindir / "gh"
+            stub.write_text('#!/usr/bin/env bash\necho "$*" >> "$DATA/calls.txt"\nexit 1\n')
+            stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+            proc = subprocess.run(  # noqa: S603 -- fixed argv, local stub
+                [str(SCRIPTS / "setup_environments.sh"), "--apply", *args],
+                env={"PATH": f"{bindir}:{os.environ['PATH']}", "DATA": tmp},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            calls = tmp_path / "calls.txt"
+            proc.calls = calls.read_text() if calls.exists() else ""  # type: ignore[attr-defined]
+            return proc
+
+    def test_rejects_unsafe_repository_and_owner_names_before_any_api_call(self) -> None:
+        bad = [
+            "o/..",
+            "o/.",
+            "o/a/b",
+            "o/",
+            "/r",
+            "o/r?x=1",
+            "o/r#x",
+            "o/r\nx",
+            "o/r\x01",
+            "o/r r",
+            "o/r%2e",
+            "o/" + "r" * 101,
+            "o-/r",
+            "o--p/r",
+            "o_p/r",
+            "o.p/r",
+            "o" * 40 + "/r",
+            "../r",
+        ]
+        for repo in bad:
+            with self.subTest(repo=repo):
+                proc = self.run_raw("--org", "o", repo)
+                self.assertEqual(proc.returncode, 2, proc.stdout)
+                self.assertIn("invalid repository", proc.stderr)
+                self.assertEqual(proc.calls, "")
+
+    def test_rejects_a_bad_org_or_bare_repo_name(self) -> None:
+        for args in (("--org", "a/b", "r"), ("--org", "o", "..")):
+            with self.subTest(args=args):
+                proc = self.run_raw(*args)
+                self.assertEqual(proc.returncode, 2)
+                self.assertEqual(proc.calls, "")
+
+    def test_accepts_documented_owner_and_repository_names(self) -> None:
+        """Valid names pass validation (the stub then fails the first API call)."""
+        for repo in ("o/r", "my-org/my.repo_1", "a/.github", "a/..x", "A1-b2/x" + "y" * 93, "x/-"):
+            with self.subTest(repo=repo):
+                proc = self.run_raw("--org", "o", repo)
+                self.assertNotIn("invalid repository", proc.stderr)
+                self.assertNotEqual(proc.calls, "")
+
+    def test_bare_repository_name_is_resolved_under_the_validated_org(self) -> None:
+        proc = self.run_raw("--org", "my-org", "r")
+        self.assertIn("orgs/my-org/", proc.calls)
+
+    def test_rejects_an_unknown_environment(self) -> None:
+        proc = self.run_raw("--env", "../x", "--org", "o", "r")
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(proc.calls, "")
+
 
 if __name__ == "__main__":
     unittest.main()
