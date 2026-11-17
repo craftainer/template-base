@@ -27,21 +27,33 @@ is_sha() {
 
 # is_ancestor <sha> <ref-or-sha>: <sha> is the same commit as, or an ancestor
 # of, the second argument. Asks the compare API instead of local history, so a
-# shallow checkout and a long branch both work. A failed API call (a 5xx, a
-# rate limit, a dropped connection) is retried up to three times, so a
-# transient error does not abandon an otherwise good result; an answer other
-# than ahead/identical (diverged, behind) is final and not retried, and a call
-# that keeps failing still refuses (fails closed). MODERATE_RETRY_DELAY is the
-# pause in seconds between attempts (default 2).
+# shallow checkout and a long branch both work. Only a transient failure is
+# retried, up to three attempts: a 5xx, a rate limit (403 or 429) or a call that
+# got no HTTP answer at all (a dropped connection: `gh` prints no "(HTTP nnn)").
+# A permanent error (400, 401, 404 unknown ref or repository, 410, 422) and an
+# answer other than ahead/identical (diverged, behind) are final and not
+# retried. Every failure refuses (fails closed). `gh` exits 1 for any error and
+# names the status only in its message, so the message is what tells them apart
+# (`git merge-base --is-ancestor` separates "no" from an error by exit status 1
+# versus other codes, but it needs the history locally). MODERATE_RETRY_DELAY is
+# the pause in seconds between attempts (default 2).
 is_ancestor() {
-  local status attempt
+  local status errfile err attempt
+  errfile="$(mktemp)" || return 1
   for attempt in 1 2 3; do
-    if status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$1...$2" --jq .status)"; then
+    if status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$1...$2" --jq .status 2> "$errfile")"; then
+      rm -f "$errfile"
       [ "$status" = ahead ] || [ "$status" = identical ]
       return
     fi
+    err="$(cat "$errfile")"
+    [ -z "$err" ] || printf '%s\n' "$err" >&2
+    if [[ "$err" =~ \(HTTP\ (400|401|404|410|422)\) ]]; then
+      break
+    fi
     [ "$attempt" = 3 ] || sleep "${MODERATE_RETRY_DELAY:-2}"
   done
+  rm -f "$errfile"
   return 1
 }
 

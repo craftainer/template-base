@@ -346,6 +346,20 @@ esac
             out = self.run_setup([], [], workflow)
             self.assertIn("declares 'environment: moderation': yes", out)
 
+    def test_ready_needs_a_real_environment_line_for_exactly_this_environment(self) -> None:
+        """A comment or a longer environment name does not count as declaring it."""
+        for workflow, ready in (
+            ("    environment: moderation\n", "yes"),
+            ("    environment: 'moderation'  # why\n", "yes"),
+            ('    environment: "moderation"\n', "yes"),
+            ("    # environment: moderation\n", "no"),
+            ("    environment: moderation-staging\n", "no"),
+            ("    environment: premoderation\n", "no"),
+        ):
+            with self.subTest(workflow=workflow):
+                out = self.run_setup([], [], workflow)
+                self.assertIn(f"declares 'environment: moderation': {ready}", out)
+
     def test_apply_keeps_can_admins_bypass_and_other_protection_rules(self) -> None:
         """A PUT replaces what it omits: every existing setting must be sent back."""
         for bypass in (False, True):

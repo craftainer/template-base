@@ -152,7 +152,9 @@ class IsAncestorTest(unittest.TestCase):
     def answer(self, outcomes: str) -> tuple[int, int]:
         """Return (exit status, number of gh calls) when gh yields these outcomes in turn.
 
-        Each character is one call: ``a`` prints ahead, ``d`` prints diverged, ``x`` fails.
+        Each character is one call: ``a`` prints ahead, ``d`` prints diverged, ``x`` fails
+        with no HTTP status, ``5`` fails with HTTP 502, ``4`` with HTTP 404, ``2`` with 422,
+        ``r`` with 403 (a rate limit).
         """
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -163,7 +165,12 @@ class IsAncestorTest(unittest.TestCase):
             "#!/usr/bin/env bash\n"
             f'n=$(cat "{root}/n" 2>/dev/null || echo 0); echo $((n+1)) > "{root}/n"\n'
             f'c=$(printf %s "{outcomes}" | cut -c$((n+1)))\n'
-            'case "$c" in a) echo ahead;; d) echo diverged;; *) exit 1;; esac\n'
+            'case "$c" in a) echo ahead;; d) echo diverged;;\n'
+            '  5) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1;;\n'
+            '  4) echo "gh: Not Found (HTTP 404)" >&2; exit 1;;\n'
+            '  2) echo "gh: Unprocessable Entity (HTTP 422)" >&2; exit 1;;\n'
+            '  r) echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1;;\n'
+            '  *) echo "dial tcp: connection reset" >&2; exit 1;; esac\n'
         )
         gh.chmod(0o755)
         proc = run(
@@ -187,6 +194,17 @@ class IsAncestorTest(unittest.TestCase):
     def test_persistent_errors_fail_closed_after_three_calls(self) -> None:
         """A call that never works refuses, after exactly three attempts."""
         self.assertEqual(self.answer("xxxa"), (1, 3))
+
+    def test_server_errors_and_rate_limits_are_retried(self) -> None:
+        """A 5xx or a 403 rate limit is transient."""
+        self.assertEqual(self.answer("5a"), (0, 2))
+        self.assertEqual(self.answer("ra"), (0, 2))
+        self.assertEqual(self.answer("555a"), (1, 3))
+
+    def test_permanent_errors_are_not_retried(self) -> None:
+        """An unknown ref (404) or an unprocessable compare (422) fails on the first call."""
+        self.assertEqual(self.answer("4a"), (1, 1))
+        self.assertEqual(self.answer("2a"), (1, 1))
 
     def test_a_definite_no_is_not_retried(self) -> None:
         """A diverged answer is final."""
